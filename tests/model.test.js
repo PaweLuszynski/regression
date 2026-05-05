@@ -1,0 +1,312 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+
+import {
+  appendNoteToCases,
+  applyStatusToCase,
+  applyStatusToCases,
+  buildTreeFromCases,
+  calculateRunStats,
+  getVisibleCaseOrder,
+  getNextCaseId,
+  getStatusColor,
+  groupCasesBySection,
+  resizeCaseListColumns,
+  resizePanelWidths,
+  sanitizeCaseListColumns,
+  sanitizePanelWidths,
+  parseSteps
+} from "../public/model.js";
+
+test("buildTreeFromCases creates nested folders from section hierarchy", () => {
+  const cases = [
+    {
+      localId: "a",
+      testId: "T1",
+      caseId: "C1",
+      title: "Root case",
+      sectionHierarchy: "Plan > Login > Vendor",
+      section: "Vendor",
+      currentStatus: "Passed"
+    },
+    {
+      localId: "b",
+      testId: "T2",
+      caseId: "C2",
+      title: "Company case",
+      sectionHierarchy: "Plan > Login > Company",
+      section: "Company",
+      currentStatus: "Failed"
+    },
+    {
+      localId: "c",
+      testId: "T3",
+      caseId: "C3",
+      title: "Missing hierarchy case",
+      section: "Fallback Section",
+      currentStatus: "Untested"
+    }
+  ];
+
+  const tree = buildTreeFromCases(cases);
+
+  assert.equal(tree.children.length, 2);
+  assert.equal(tree.children[0].name, "Plan");
+  assert.equal(tree.children[0].children[0].name, "Login");
+  assert.equal(tree.children[0].children[0].children[0].name, "Vendor");
+  assert.equal(tree.children[0].children[0].children[0].children[0].type, "test");
+  assert.equal(tree.children[0].children[0].children[0].children[0].testId, "T1");
+  assert.equal(tree.children[1].name, "Fallback Section");
+  assert.deepEqual(tree.children[0].counts, {
+    Passed: 1,
+    Untested: 0,
+    Failed: 1,
+    "In test": 0,
+    Retest: 0,
+    Blocked: 0,
+    "Conditionally Passed": 0,
+    Skipped: 0
+  });
+});
+
+test("getStatusColor returns readable semantic status classes", () => {
+  assert.equal(getStatusColor("Passed").className, "status-passed");
+  assert.equal(getStatusColor("Untested").className, "status-untested");
+  assert.equal(getStatusColor("Failed").className, "status-failed");
+  assert.equal(getStatusColor("In test").className, "status-in-test");
+  assert.equal(getStatusColor("Retest").className, "status-retest");
+  assert.equal(getStatusColor("Blocked").className, "status-blocked");
+  assert.equal(getStatusColor("Conditionally Passed").className, "status-conditionally-passed");
+  assert.equal(getStatusColor("Unknown").className, "status-unknown");
+});
+
+test("calculateRunStats uses current statuses and separates completed from passed", () => {
+  const stats = calculateRunStats([
+    { currentStatus: "Passed" },
+    { currentStatus: "Failed" },
+    { currentStatus: "In test" },
+    { currentStatus: "Untested" },
+    { currentStatus: "Conditionally Passed" }
+  ]);
+
+  assert.equal(stats.total, 5);
+  assert.equal(stats.completed, 4);
+  assert.equal(stats.completedPercent, 80);
+  assert.equal(stats.passedPercent, 20);
+  assert.equal(stats.counts.Passed, 1);
+  assert.equal(stats.counts.Untested, 1);
+  assert.equal(stats.counts["Conditionally Passed"], 1);
+});
+
+test("parseSteps aligns numbered steps with numbered expected results", () => {
+  const steps = parseSteps({
+    "Steps (Step)": "<p>1. Open page.</p><p>2. Submit form.</p>",
+    "Steps (Expected Result)": "1. Page opens.\n2. Validation is shown.",
+    "Steps (Status)": "1. Passed\n2. Untested"
+  });
+
+  assert.deepEqual(steps, [
+    {
+      step: "Open page.",
+      expectedResult: "Page opens.",
+      status: "Passed",
+      additionalInfo: "",
+      references: ""
+    },
+    {
+      step: "Submit form.",
+      expectedResult: "Validation is shown.",
+      status: "Untested",
+      additionalInfo: "",
+      references: ""
+    }
+  ]);
+});
+
+test("parseSteps distributes repeated unnumbered step statuses", () => {
+  const steps = parseSteps({
+    "Steps (Step)": "1. Open page.\n2. Submit form.",
+    "Steps (Expected Result)": "1. Page opens.\n2. Validation is shown.",
+    "Steps (Status)": "Untested Untested"
+  });
+
+  assert.equal(steps[0].status, "Untested");
+  assert.equal(steps[1].status, "Untested");
+});
+
+test("parseSteps falls back to rich duplicate Steps content", () => {
+  const steps = parseSteps({
+    Steps: "",
+    Steps__2: "Step Description: Create record\nExpected Result: Record appears"
+  });
+
+  assert.deepEqual(steps, [
+    {
+      step: "Step Description: Create record",
+      expectedResult: "Record appears",
+      status: "",
+      additionalInfo: "",
+      references: ""
+    }
+  ]);
+});
+
+test("sanitizePanelWidths uses defaults and enforces minimum widths", () => {
+  assert.deepEqual(sanitizePanelWidths({ tree: 10, list: 400, detail: 200 }), {
+    tree: 220,
+    list: 500,
+    detail: 420
+  });
+
+  assert.deepEqual(sanitizePanelWidths({ tree: 340, list: 860, detail: 680 }), {
+    tree: 340,
+    list: 860,
+    detail: 680
+  });
+});
+
+test("resizePanelWidths moves space between adjacent panels without crossing minimums", () => {
+  assert.deepEqual(
+    resizePanelWidths({ tree: 300, list: 700, detail: 600 }, "tree-list", 80),
+    { tree: 380, list: 620, detail: 600 }
+  );
+
+  assert.deepEqual(
+    resizePanelWidths({ tree: 300, list: 700, detail: 600 }, "tree-list", 400),
+    { tree: 500, list: 500, detail: 600 }
+  );
+
+  assert.deepEqual(
+    resizePanelWidths({ tree: 300, list: 700, detail: 600 }, "list-detail", -220),
+    { tree: 300, list: 500, detail: 800 }
+  );
+});
+
+test("sanitizeCaseListColumns uses defaults and enforces readable minimum widths", () => {
+  assert.deepEqual(sanitizeCaseListColumns({ id: 20, title: 120, status: 60 }), {
+    id: 70,
+    title: 220,
+    status: 120
+  });
+
+  assert.deepEqual(sanitizeCaseListColumns({ id: 92, title: 540, status: 170 }), {
+    id: 92,
+    title: 540,
+    status: 170
+  });
+});
+
+test("resizeCaseListColumns updates one column while preserving other widths", () => {
+  assert.deepEqual(
+    resizeCaseListColumns({ id: 86, title: 520, status: 150 }, "title", 80),
+    { id: 86, title: 600, status: 150 }
+  );
+
+  assert.deepEqual(
+    resizeCaseListColumns({ id: 86, title: 520, status: 150 }, "status", -80),
+    { id: 86, title: 520, status: 120 }
+  );
+
+  assert.deepEqual(
+    resizeCaseListColumns({ id: 86, title: 520, status: 150 }, "unknown", 80),
+    { id: 86, title: 520, status: 150 }
+  );
+});
+
+test("applyStatusToCase updates current status and timestamp without changing original status", () => {
+  const cases = [{ localId: "a", originalStatus: "Untested", currentStatus: "Untested", updatedAt: "old" }];
+  const result = applyStatusToCase(cases, "a", "Passed", "now");
+
+  assert.equal(result.changed, 1);
+  assert.equal(cases[0].originalStatus, "Untested");
+  assert.equal(cases[0].currentStatus, "Passed");
+  assert.equal(cases[0].updatedAt, "now");
+});
+
+test("applyStatusToCases updates only selected cases", () => {
+  const cases = [
+    { localId: "a", originalStatus: "Untested", currentStatus: "Untested", updatedAt: "old" },
+    { localId: "b", originalStatus: "Failed", currentStatus: "Failed", updatedAt: "old" },
+    { localId: "c", originalStatus: "Passed", currentStatus: "Passed", updatedAt: "old" }
+  ];
+
+  const result = applyStatusToCases(cases, ["a", "c"], "Retest", "now");
+
+  assert.equal(result.changed, 2);
+  assert.equal(cases[0].currentStatus, "Retest");
+  assert.equal(cases[1].currentStatus, "Failed");
+  assert.equal(cases[2].currentStatus, "Retest");
+  assert.equal(cases[2].originalStatus, "Passed");
+});
+
+test("getNextCaseId returns the next visible id or null for the last case", () => {
+  assert.equal(getNextCaseId("a", ["a", "b", "c"]), "b");
+  assert.equal(getNextCaseId("c", ["a", "b", "c"]), null);
+  assert.equal(getNextCaseId("missing", ["a", "b", "c"]), "a");
+});
+
+test("groupCasesBySection groups by hierarchy leaf while preserving visible order", () => {
+  const cases = [
+    {
+      localId: "a",
+      testId: "T1",
+      title: "Login",
+      sectionHierarchy: "Plan > Start",
+      section: "Start"
+    },
+    {
+      localId: "b",
+      testId: "T2",
+      title: "Logout",
+      sectionHierarchy: "Plan > Start",
+      section: "Start"
+    },
+    {
+      localId: "c",
+      testId: "T3",
+      title: "Vendor",
+      sectionHierarchy: "Plan > Registration > Vendor",
+      section: "Vendor"
+    },
+    {
+      localId: "d",
+      testId: "T4",
+      title: "Fallback",
+      section: "Fallback Section"
+    },
+    {
+      localId: "e",
+      testId: "T5",
+      title: "No Section"
+    }
+  ];
+
+  const groups = groupCasesBySection(cases);
+
+  assert.deepEqual(groups.map((group) => group.label), [
+    "Start",
+    "Registration / Vendor",
+    "Fallback Section",
+    "Ungrouped"
+  ]);
+  assert.deepEqual(groups.map((group) => group.cases.map((testCase) => testCase.localId)), [
+    ["a", "b"],
+    ["c"],
+    ["d"],
+    ["e"]
+  ]);
+  assert.deepEqual(getVisibleCaseOrder(groups), ["a", "b", "c", "d", "e"]);
+});
+
+test("appendNoteToCases appends notes without overwriting existing local notes", () => {
+  const cases = [
+    { localId: "a", localNotes: "Existing", updatedAt: "old" },
+    { localId: "b", localNotes: "", updatedAt: "old" }
+  ];
+
+  const result = appendNoteToCases(cases, ["a", "b"], "New note", "2026-05-05T10:00:00.000Z");
+
+  assert.equal(result.changed, 2);
+  assert.match(cases[0].localNotes, /Existing\n\n\[2026-05-05T10:00:00.000Z\]\nNew note/);
+  assert.equal(cases[1].localNotes, "[2026-05-05T10:00:00.000Z]\nNew note");
+});

@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TestRail Local Run Viewer</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <h1>TestRail Local Run Viewer</h1>
+        <p id="runMeta">Import a TestRail XLSX run export to continue locally.</p>
+      </div>
+      <div class="topbar-actions">
+        <label class="file-button">
+          <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+          Import XLSX
+        </label>
+        <button id="exportJsonButton" type="button" disabled>Export JSON</button>
+        <button id="exportCsvButton" type="button" disabled>Export CSV</button>
+        <button id="resetLayoutButton" type="button">Reset layout</button>
+      </div>
+    </header>
+
+    <main>
+      <section id="message" class="message" hidden></section>
+
+      <section class="saved-runs">
+        <div class="section-heading">
+          <h2>Saved Local Runs</h2>
+          <button id="refreshRunsButton" type="button">Refresh</button>
+        </div>
+        <div id="savedRuns" class="saved-run-list"></div>
+      </section>
+
+      <section id="workspace" class="workspace" hidden>
+        <section id="summary" class="summary-grid"></section>
+
+        <section class="filters" aria-label="Filters">
+          <input id="searchInput" type="search" placeholder="Search ID, Case ID, title, section, references, defects">
+          <select id="currentStatusFilter" aria-label="Current Status"></select>
+          <select id="originalStatusFilter" aria-label="Original Status"></select>
+          <select id="priorityFilter" aria-label="Priority"></select>
+          <select id="sectionFilter" aria-label="Section"></select>
+          <select id="assignedToFilter" aria-label="Assigned To"></select>
+          <button id="clearFiltersButton" type="button">Clear</button>
+        </section>
+
+        <section id="bulkBar" class="bulk-bar" hidden>
+          <strong id="selectedCount">0 selected</strong>
+          <label>
+            <span>Bulk status</span>
+            <select id="bulkStatusSelect"></select>
+          </label>
+          <button id="bulkApplyButton" type="button">Apply status</button>
+          <label class="bulk-note-field">
+            <span>Append note</span>
+            <input id="bulkNoteInput" type="text" placeholder="Optional note for selected cases">
+          </label>
+          <button id="bulkAppendNoteButton" type="button">Append note</button>
+          <button id="clearSelectionButton" type="button">Clear selection</button>
+        </section>
+
+        <section id="contentGrid" class="content-grid">
+          <aside class="tree-pane">
+            <div class="pane-heading">
+              <h2>Work Tree</h2>
+            </div>
+            <div id="treeRoot" class="tree-root"></div>
+          </aside>
+
+          <div class="resize-handle" data-resize-handle="tree-list" role="separator" aria-orientation="vertical" aria-label="Resize Work Tree and Test Case List" tabindex="0"></div>
+
+          <div class="table-wrap">
+            <div class="case-list-header">
+              <input id="selectAllVisibleCheckbox" type="checkbox" aria-label="Select all visible test cases">
+              <span class="case-header-cell">
+                ID
+                <span class="case-column-resizer" data-case-column="id" role="separator" aria-orientation="vertical" aria-label="Resize ID column" tabindex="0"></span>
+              </span>
+              <span class="case-header-cell">
+                Title
+                <span class="case-column-resizer" data-case-column="title" role="separator" aria-orientation="vertical" aria-label="Resize Title column" tabindex="0"></span>
+              </span>
+              <span class="case-header-cell">
+                Status
+                <span class="case-column-resizer" data-case-column="status" role="separator" aria-orientation="vertical" aria-label="Resize Status column" tabindex="0"></span>
+              </span>
+            </div>
+            <div id="caseList" class="case-list"></div>
+          </div>
+
+          <div class="resize-handle" data-resize-handle="list-detail" role="separator" aria-orientation="vertical" aria-label="Resize Test Case List and Test Case Details" tabindex="0"></div>
+
+          <aside id="detailPane" class="detail-pane" aria-live="polite">
+            <p class="empty-detail">Select a test case to view details and edit local execution state.</p>
+          </aside>
+        </section>
+      </section>
+    </main>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>
