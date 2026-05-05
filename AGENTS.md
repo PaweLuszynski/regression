@@ -5,6 +5,7 @@
 This project is a local-only TestRail XLSX run viewer/editor.
 
 The app should let the user:
+
 - import a TestRail XLSX run export
 - view test cases grouped by section/folder
 - continue execution locally
@@ -38,8 +39,12 @@ This is not a TestRail API client.
 - Avoid heavy dependencies unless clearly justified.
 - Do not refactor unrelated code during feature work.
 - Before editing, inspect the existing structure and reuse existing helpers/components where possible.
-- If `master_plan.md` exists, read it before planning changes.
-- After finishing a task, assess whether `master_plan.md` needs updating. Update it only when the project direction, workflow, or architecture changed.
+
+## Code review rules
+
+- Prevent overengineering and "AI slop" by strictly sticking to requested features. Keep the codebase clean, simple, and direct.
+- Every change must be done on a new branch.
+- After a change is confirmed to work properly, it should be merged into `main`.
 
 ## XLSX parsing rules
 
@@ -54,19 +59,12 @@ This is not a TestRail API client.
 
 ## Test case status rules
 
-Use local/current status for execution UI:
-- Passed
-- Untested
-- Failed
-- In test
-- Retest
-- Blocked
-- Conditionally Passed
-- Skipped
+Use local/current status for execution UI. These statuses must follow the contents of the file exported from TestRail because every project can have different statuses, and agents must adjust the project accordingly.
 
 Original imported `Status` must stay unchanged.
 
 Changing current status must update:
+
 - details view
 - grouped test list
 - work tree colors/counts
@@ -96,6 +94,7 @@ Changing current status must update:
 ## Data/export rules
 
 Exported JSON should include:
+
 - run metadata
 - original columns
 - all test cases
@@ -111,6 +110,7 @@ Do not silently discard imported data.
 ## Testing rules
 
 When changing parser logic, add/update tests for:
+
 - duplicate headers
 - key TestRail fields
 - status initialization
@@ -118,18 +118,21 @@ When changing parser logic, add/update tests for:
 - step parsing
 
 When changing execution logic, add/update tests for:
+
 - current status updates
 - original status preservation
 - bulk updates
 - next visible test case order
 
 When changing UI helpers, add/update tests where practical for:
+
 - grouping by section
 - visible order
 - status stats
 - status color mapping
 
 Before reporting completion, run available:
+
 - tests
 - build
 - lint, if configured
@@ -137,9 +140,9 @@ Before reporting completion, run available:
 ## Reporting rules
 
 After each task, report:
+
 - what changed
 - how to test it
 - what commands were run
 - whether tests/build/lint passed
-- whether `master_plan.md` was updated or why not
 - confirmation that no private workbook path/name was hardcoded

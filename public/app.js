@@ -212,7 +212,7 @@ function setRun(run) {
   state.selectedCaseIds = new Set();
   state.expandedFolders = collectFolderIds(buildTreeFromCases(run.cases));
   resetFilterOptions();
-  render();
+  render({ preserveScroll: true });
 }
 
 function resetFilterOptions() {
@@ -232,7 +232,7 @@ function resetFilterOptions() {
   fillSelect(elements.assignedToFilter, "Assigned To", uniqueValues("assignedTo"));
 }
 
-function render() {
+function render(options = {}) {
   const run = state.run;
   const hasRun = Boolean(run);
   elements.workspace.hidden = !hasRun;
@@ -242,16 +242,32 @@ function render() {
     return;
   }
 
-  elements.runMeta.textContent = `${run.runName || "Imported run"} · ${run.runId || "No run ID"} · ${run.sheetName} · ${run.cases.length} tests`;
-  renderSummary(run.cases);
-  const visibleCases = filteredCases();
-  pruneSelection();
-  const groupedCases = groupCasesBySection(visibleCases);
-  renderBulkControls(visibleCases);
-  renderTree(visibleCases);
-  renderCaseList(groupedCases);
-  renderDetail(run.cases.find((testCase) => testCase.localId === state.selectedLocalId) || visibleCases[0]);
+  const doRender = () => {
+    elements.runMeta.textContent = `${run.runName || "Imported run"} · ${run.runId || "No run ID"} · ${run.sheetName} · ${run.cases.length} tests`;
+    renderSummary(run.cases);
+    const visibleCases = filteredCases();
+    pruneSelection();
+    const groupedCases = groupCasesBySection(visibleCases);
+    renderBulkControls(visibleCases);
+    renderTree(visibleCases);
+    renderCaseList(groupedCases);
+    renderDetail(run.cases.find((testCase) => testCase.localId === state.selectedLocalId) || visibleCases[0]);
+
+    if (options.scrollIntoView) {
+      const selectedRow = elements.caseList.querySelector(".case-list-row.selected");
+      if (selectedRow) {
+        selectedRow.scrollIntoView({ block: "nearest" });
+      }
+    }
+  };
+
+  if (options.preserveScroll) {
+    withCaseListScrollPreserved(doRender);
+  } else {
+    doRender();
+  }
 }
+
 
 function renderSummary(cases) {
   elements.summary.replaceChildren();
@@ -312,7 +328,7 @@ function renderTreeNode(node) {
       } else {
         state.expandedFolders.add(node.id);
       }
-      render();
+      render({ preserveScroll: true });
     });
     button.append(
       textElement("span", isOpen ? "▾" : "▸", "tree-caret"),
@@ -341,7 +357,7 @@ function renderTreeNode(node) {
   }
   button.addEventListener("click", () => {
     state.selectedLocalId = node.localId;
-    render();
+    render({ preserveScroll: true });
   });
   button.append(
     statusDot(node.status),
@@ -387,7 +403,7 @@ function caseListRow(testCase) {
   }
   row.addEventListener("click", () => {
     state.selectedLocalId = testCase.localId;
-    render();
+    render({ preserveScroll: true });
   });
   row.addEventListener("keydown", (event) => {
     if (event.target !== row) {
@@ -398,7 +414,7 @@ function caseListRow(testCase) {
     }
     event.preventDefault();
     state.selectedLocalId = testCase.localId;
-    render();
+    render({ preserveScroll: true });
   });
 
   const checkbox = document.createElement("input");
@@ -659,7 +675,7 @@ async function updateCase(localId, patch) {
     return;
   }
   Object.assign(testCase, patch, { updatedAt: new Date().toISOString() });
-  render();
+  render({ preserveScroll: true });
   try {
     await saveProgress();
     showMessage("Progress saved locally.", "success");
@@ -680,7 +696,7 @@ async function updateCaseStatus(localId, status, options = {}) {
   if (options.advance && nextId) {
     state.selectedLocalId = nextId;
   }
-  render();
+  render({ preserveScroll: true, scrollIntoView: options.advance });
   try {
     await saveProgress();
     showMessage(
@@ -706,7 +722,7 @@ async function applyBulkStatus() {
   }
   const result = applyStatusToCases(state.run.cases, selectedIds, status, new Date().toISOString());
   state.selectedCaseIds.clear();
-  render();
+  render({ preserveScroll: true });
   try {
     await saveProgress();
     showMessage(`Updated ${result.changed} test cases to ${status}.`, "success");
@@ -728,7 +744,7 @@ async function appendBulkNote() {
   const result = appendNoteToCases(state.run.cases, selectedIds, note, new Date().toISOString());
   elements.bulkNoteInput.value = "";
   state.selectedCaseIds.clear();
-  render();
+  render({ preserveScroll: true });
   try {
     await saveProgress();
     showMessage(`Appended note to ${result.changed} test cases.`, "success");
@@ -791,7 +807,7 @@ function clearFilters() {
     section: "",
     assignedTo: ""
   };
-  render();
+  render({ preserveScroll: true });
 }
 
 function toggleCaseSelection(localId, selected) {
@@ -801,7 +817,7 @@ function toggleCaseSelection(localId, selected) {
     } else {
       state.selectedCaseIds.delete(localId);
     }
-    render();
+    render({ preserveScroll: true });
   });
 }
 
@@ -817,14 +833,14 @@ function toggleAllVisibleSelection() {
         state.selectedCaseIds.delete(testCase.localId);
       }
     }
-    render();
+    render({ preserveScroll: true });
   });
 }
 
 function clearSelection() {
   withCaseListScrollPreserved(() => {
     state.selectedCaseIds.clear();
-    render();
+    render({ preserveScroll: true });
   });
 }
 
