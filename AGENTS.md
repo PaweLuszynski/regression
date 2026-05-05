@@ -146,3 +146,38 @@ After each task, report:
 - what commands were run
 - whether tests/build/lint passed
 - confirmation that no private workbook path/name was hardcoded
+
+## Local task workflow rules
+
+This repo also contains a local Obsidian-compatible side-project task workflow.
+
+- Permanent issue note folder: `projects/issues/`
+- Kanban board note: `projects/boards/project-kanban.md`
+- Task template: `projects/templates/issue-template.md`
+- Helper script: `scripts/task-workflow.js`
+
+Agents must:
+
+- create new task notes in `projects/issues/`
+- assign the next unique `TASK-####` id
+- keep task notes in that folder permanently
+- never move issue files between folders to represent status
+- store workflow state in frontmatter `status`
+- support only these workflow statuses:
+  - `backlog`
+  - `in-progress`
+  - `done`
+- add new tasks to the `Backlog` column by creating the note with `status: backlog`
+- when work starts, update the note frontmatter to `status: in-progress`
+- when work completes, update the note frontmatter to `status: done`
+- rebuild the Kanban board from current task metadata instead of hand-editing partial board state when possible
+- keep note links valid and stable
+- preserve existing task note content unless the requested task requires changing it
+- keep the board file valid for the Obsidian Kanban plugin format already used in this repo
+
+Preferred commands:
+
+- `node scripts/task-workflow.js create --title "Task title"`
+- `node scripts/task-workflow.js status TASK-0001 in-progress`
+- `node scripts/task-workflow.js status TASK-0001 done`
+- `node scripts/task-workflow.js rebuild`

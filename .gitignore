@@ -3,3 +3,13 @@ data/progress/*.json
 .playwright-mcp/
 *.xlsx
 .DS_Store
+.obsidian/
+.obsidian/workspace*.json
+.obsidian/graph.json
+.obsidian/cache/
+.obsidian/app.json
+.obsidian/appearance.json
+.obsidian/community-plugins.json
+.obsidian/core-plugins.json
+projects/issues/*.md
+projects/boards/project-kanban.md
