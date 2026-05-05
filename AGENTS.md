@@ -174,6 +174,15 @@ Agents must:
 - keep note links valid and stable
 - preserve existing task note content unless the requested task requires changing it
 - keep the board file valid for the Obsidian Kanban plugin format already used in this repo
+- prefer the helper script commands over manual task-file or board edits when practical
+
+Trigger rules:
+
+- when starting work on an existing tracked task, immediately set that task to `in-progress`
+- when finishing work on an existing tracked task, immediately set that task to `done`
+- when discovering a new piece of work worth tracking, immediately create a new task note in `projects/issues/` with `status: backlog`
+- after creating a task note, rebuild the Kanban board
+- after changing any task status, rebuild the Kanban board
 
 Preferred commands:
 
