@@ -132,6 +132,41 @@ button:hover,
   color: var(--muted);
 }
 
+.save-state {
+  font-size: 12px;
+}
+
+.save-state.info {
+  color: #5b6777;
+}
+
+.save-state.success {
+  color: #2f855a;
+}
+
+.save-state.warning {
+  color: #8a6a1e;
+}
+
+.save-state.error {
+  color: #b42318;
+}
+
+.save-state-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.save-state-actions[hidden] {
+  display: none;
+}
+
+.save-state-actions button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
 .topbar-actions {
   display: flex;
   align-items: center;

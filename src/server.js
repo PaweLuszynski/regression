@@ -1,4 +1,3 @@
-import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
@@ -7,7 +6,13 @@ import { fileURLToPath } from "node:url";
 import { parseTestRailRunFromBuffer } from "./parser.js";
 import { parseRunProgressCsv } from "./run-csv.js";
 import { parseRunProgressJson } from "./run-json.js";
-import { listSavedRunsFromDir, normalizePathname, parseJsonText } from "./server-runs.js";
+import {
+  listSavedRunsFromDir,
+  normalizePathname,
+  parseJsonText,
+  readSavedRunFromDir,
+  writeRunAtomically
+} from "./server-runs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
@@ -174,29 +179,15 @@ async function serveStatic(pathname, response) {
 }
 
 async function readSavedRun(id) {
-  const filePath = progressPath(id);
-  try {
-    return JSON.parse(await fs.readFile(filePath, "utf8"));
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
+  return readSavedRunFromDir(progressDir, id);
 }
 
 async function saveRun(run) {
-  await fs.mkdir(progressDir, { recursive: true });
   const cleanRun = {
     ...run,
     savedAt: new Date().toISOString()
   };
-  await fs.writeFile(progressPath(run.id), `${JSON.stringify(cleanRun, null, 2)}\n`, "utf8");
-}
-
-function progressPath(id) {
-  const safeId = String(id || "run").replaceAll(/[^\w.-]+/g, "_");
-  return path.join(progressDir, `${safeId}.json`);
+  await writeRunAtomically(progressDir, run.id, cleanRun);
 }
 
 async function readRequestBody(request) {

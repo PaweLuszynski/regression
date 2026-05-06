@@ -11,6 +11,11 @@
       <div>
         <h1>TestRail Local Run Viewer</h1>
         <p id="runMeta">Import a TestRail XLSX run export to continue locally.</p>
+        <p id="saveState" class="save-state" hidden></p>
+        <div id="saveStateActions" class="save-state-actions" hidden>
+          <button id="recoverUnsavedButton" type="button">Recover unsaved changes</button>
+          <button id="discardUnsavedButton" type="button">Discard unsaved changes</button>
+        </div>
       </div>
       <div class="topbar-actions">
         <details class="menu-control">

@@ -7,10 +7,12 @@ import {
   applyStatusToCases,
   buildTreeFromCases,
   calculateRunStats,
+  latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
   getStatusColor,
   groupCasesBySection,
+  resolveUnsavedRunRecovery,
   resizeCaseListColumns,
   resizePanelWidths,
   sanitizeCaseListColumns,
@@ -309,4 +311,73 @@ test("appendNoteToCases appends notes without overwriting existing local notes",
   assert.equal(result.changed, 2);
   assert.match(cases[0].localNotes, /Existing\n\n\[2026-05-05T10:00:00.000Z\]\nNew note/);
   assert.equal(cases[1].localNotes, "[2026-05-05T10:00:00.000Z]\nNew note");
+});
+
+test("resolveUnsavedRunRecovery discards stale cache when server data is newer", () => {
+  const serverRun = {
+    id: "R1",
+    savedAt: "2026-05-06T12:10:00.000Z",
+    cases: [{ updatedAt: "2026-05-06T12:10:00.000Z" }]
+  };
+  const cached = {
+    cachedAt: "2026-05-06T12:00:00.000Z",
+    run: {
+      id: "R1",
+      cases: [{ updatedAt: "2026-05-06T11:59:00.000Z" }]
+    }
+  };
+
+  const result = resolveUnsavedRunRecovery(serverRun, cached);
+  assert.equal(result.action, "discard");
+});
+
+test("resolveUnsavedRunRecovery applies cache when cache timestamp is newer", () => {
+  const serverRun = {
+    id: "R1",
+    savedAt: "2026-05-06T12:00:00.000Z",
+    cases: [{ updatedAt: "2026-05-06T12:00:00.000Z" }]
+  };
+  const cachedRun = {
+    id: "R1",
+    cases: [{ updatedAt: "2026-05-06T12:06:00.000Z", currentStatus: "Passed" }]
+  };
+  const result = resolveUnsavedRunRecovery(serverRun, {
+    cachedAt: "2026-05-06T12:06:00.000Z",
+    run: cachedRun
+  });
+
+  assert.equal(result.action, "apply");
+  assert.equal(result.run, cachedRun);
+});
+
+test("resolveUnsavedRunRecovery keeps cache pending when timestamps are invalid", () => {
+  const serverRun = {
+    id: "R1",
+    savedAt: "not-a-time",
+    cases: [{ updatedAt: "" }]
+  };
+  const cachedRun = {
+    id: "R1",
+    cases: [{ updatedAt: "also-bad" }]
+  };
+  const result = resolveUnsavedRunRecovery(serverRun, {
+    cachedAt: "bad-time",
+    run: cachedRun
+  });
+
+  assert.equal(result.action, "pending");
+  assert.equal(result.run, cachedRun);
+});
+
+test("latestRunTimestamp returns most recent valid timestamp from run fields", () => {
+  const timestamp = latestRunTimestamp({
+    importedAt: "2026-05-06T10:00:00.000Z",
+    savedAt: "2026-05-06T11:00:00.000Z",
+    cases: [
+      { updatedAt: "2026-05-06T09:00:00.000Z" },
+      { updatedAt: "2026-05-06T12:00:00.000Z" }
+    ]
+  });
+
+  assert.equal(timestamp, Date.parse("2026-05-06T12:00:00.000Z"));
 });
