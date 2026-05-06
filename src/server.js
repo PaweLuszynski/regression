@@ -5,11 +5,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { parseTestRailRunFromBuffer } from "./parser.js";
+import { parseRunProgressCsv } from "./run-csv.js";
+import { parseRunProgressJson } from "./run-json.js";
+import { listSavedRunsFromDir, normalizePathname, parseJsonText } from "./server-runs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
-const progressDir = path.join(rootDir, "data", "progress");
+const progressDir = process.env.PROGRESS_DIR || path.join(rootDir, "data", "progress");
 const host = "127.0.0.1";
 const port = Number(process.env.PORT || 4173);
 
@@ -35,17 +38,18 @@ server.listen(port, host, () => {
 
 async function route(request, response) {
   const url = new URL(request.url || "/", `http://${host}:${port}`);
+  const pathname = normalizePathname(url.pathname);
 
-  if (request.method === "GET" && url.pathname === "/favicon.ico") {
+  if (request.method === "GET" && pathname === "/favicon.ico") {
     response.writeHead(204);
     return response.end();
   }
 
-  if (request.method === "GET" && url.pathname === "/api/runs") {
-    return sendJson(response, 200, { runs: await listSavedRuns() });
+  if (request.method === "GET" && pathname === "/api/runs") {
+    return sendJson(response, 200, { runs: await listSavedRunsFromDir(progressDir) });
   }
 
-  if (request.method === "POST" && url.pathname === "/api/import") {
+  if (request.method === "POST" && pathname === "/api/import") {
     const sourceFileName = decodeURIComponent(request.headers["x-file-name"] || "import.xlsx");
     const buffer = await readRequestBody(request);
     const importedRun = await parseTestRailRunFromBuffer(buffer, { sourceFileName });
@@ -66,7 +70,39 @@ async function route(request, response) {
     });
   }
 
-  const runMatch = url.pathname.match(/^\/api\/runs\/([^/]+)$/);
+  if (request.method === "POST" && pathname === "/api/import-json") {
+    let restoredRun;
+    try {
+      restoredRun = parseRunProgressJson((await readRequestBody(request)).toString("utf8"));
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message || "Invalid JSON progress file." });
+    }
+
+    await saveRun(restoredRun);
+    return sendJson(response, 201, {
+      run: restoredRun,
+      message: "JSON progress restored and saved locally."
+    });
+  }
+
+  if (request.method === "POST" && pathname === "/api/import-csv") {
+    let restoredRun;
+    try {
+      restoredRun = parseRunProgressCsv((await readRequestBody(request)).toString("utf8"), {
+        sourceFileName: decodeURIComponent(request.headers["x-file-name"] || "restored.csv")
+      });
+    } catch (error) {
+      return sendJson(response, 400, { error: error.message || "Invalid CSV progress file." });
+    }
+
+    await saveRun(restoredRun);
+    return sendJson(response, 201, {
+      run: restoredRun,
+      message: "CSV progress restored and saved locally."
+    });
+  }
+
+  const runMatch = pathname.match(/^\/api\/runs\/([^/]+)$/);
   if (runMatch && request.method === "GET") {
     const run = await readSavedRun(runMatch[1]);
     if (!run) {
@@ -76,7 +112,15 @@ async function route(request, response) {
   }
 
   if (runMatch && request.method === "PUT") {
-    const body = await readJsonBody(request);
+    let body;
+    try {
+      body = await readJsonBody(request);
+    } catch (error) {
+      if (error instanceof SyntaxError) {
+        return sendJson(response, 400, { error: "Invalid JSON body." });
+      }
+      throw error;
+    }
     const run = body.run;
     if (!run || run.id !== runMatch[1] || !Array.isArray(run.cases)) {
       return sendJson(response, 400, { error: "Invalid run payload." });
@@ -85,7 +129,7 @@ async function route(request, response) {
     return sendJson(response, 200, { run, message: "Progress saved." });
   }
 
-  const exportMatch = url.pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
+  const exportMatch = pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
   if (exportMatch && request.method === "GET") {
     const run = await readSavedRun(exportMatch[1]);
     if (!run) {
@@ -101,7 +145,7 @@ async function route(request, response) {
   }
 
   if (request.method === "GET") {
-    return serveStatic(url.pathname, response);
+    return serveStatic(pathname, response);
   }
 
   sendJson(response, 405, { error: "Method not allowed." });
@@ -127,28 +171,6 @@ async function serveStatic(pathname, response) {
     }
     throw error;
   }
-}
-
-async function listSavedRuns() {
-  await fs.mkdir(progressDir, { recursive: true });
-  const files = await fs.readdir(progressDir);
-  const runs = [];
-  for (const fileName of files.filter((file) => file.endsWith(".json"))) {
-    const run = await readSavedRun(path.basename(fileName, ".json"));
-    if (run) {
-      runs.push({
-        id: run.id,
-        runName: run.runName,
-        runId: run.runId,
-        sourceFileName: run.sourceFileName,
-        sheetName: run.sheetName,
-        importedAt: run.importedAt,
-        cases: run.cases.length,
-        updatedAt: latestCaseUpdate(run)
-      });
-    }
-  }
-  return runs.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
 async function readSavedRun(id) {
@@ -187,7 +209,7 @@ async function readRequestBody(request) {
 
 async function readJsonBody(request) {
   const body = await readRequestBody(request);
-  return JSON.parse(body.toString("utf8") || "{}");
+  return parseJsonText(body.toString("utf8"));
 }
 
 function sendJson(response, statusCode, payload) {
@@ -198,12 +220,4 @@ function sendJson(response, statusCode, payload) {
     "x-content-type-options": "nosniff"
   });
   response.end(text);
-}
-
-function latestCaseUpdate(run) {
-  return run.cases
-    .map((testCase) => testCase.updatedAt)
-    .filter(Boolean)
-    .sort()
-    .at(-1) || run.importedAt;
 }

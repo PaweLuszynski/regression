@@ -20,6 +20,11 @@ import {
 
 const layoutStorageKey = "testrailLocalViewer.panelWidths.v1";
 const caseListColumnsStorageKey = "testrailLocalViewer.caseListColumns.v1";
+const importAcceptByType = {
+  xlsx: ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  json: ".json,application/json",
+  csv: ".csv,text/csv"
+};
 const statusActions = [
   ["Pass", "Passed"],
   ["Fail", "Failed"],
@@ -39,6 +44,7 @@ const state = {
   caseListColumns: loadCaseListColumns(),
   activeResize: null,
   activeColumnResize: null,
+  pendingImportType: "",
   filters: {
     search: "",
     currentStatus: "",
@@ -50,7 +56,12 @@ const state = {
 };
 
 const elements = {
-  fileInput: document.querySelector("#fileInput"),
+  importFileInput: document.querySelector("#importFileInput"),
+  importXlsxButton: document.querySelector("#importXlsxButton"),
+  importJsonButton: document.querySelector("#importJsonButton"),
+  importCsvButton: document.querySelector("#importCsvButton"),
+  exportMenuSummary: document.querySelector("#exportMenuSummary"),
+  menuControls: [...document.querySelectorAll(".menu-control")],
   runMeta: document.querySelector("#runMeta"),
   message: document.querySelector("#message"),
   savedRuns: document.querySelector("#savedRuns"),
@@ -82,7 +93,10 @@ const elements = {
   resetLayoutButton: document.querySelector("#resetLayoutButton")
 };
 
-elements.fileInput.addEventListener("change", importSelectedFile);
+elements.importFileInput.addEventListener("change", importFromFile);
+elements.importXlsxButton.addEventListener("click", () => startImport("xlsx"));
+elements.importJsonButton.addEventListener("click", () => startImport("json"));
+elements.importCsvButton.addEventListener("click", () => startImport("csv"));
 elements.refreshRunsButton.addEventListener("click", loadSavedRuns);
 elements.clearFiltersButton.addEventListener("click", clearFilters);
 elements.exportJsonButton.addEventListener("click", exportJson);
@@ -125,34 +139,101 @@ for (const [key, element] of [
 
 loadSavedRuns();
 
-async function importSelectedFile(event) {
-  const file = event.target.files?.[0];
+function startImport(type) {
+  state.pendingImportType = type;
+  elements.importFileInput.accept = importAcceptByType[type] || "";
+  elements.importFileInput.click();
+  closeMenus();
+}
+
+async function importFromFile(event) {
+  const file = elements.importFileInput.files?.[0];
   if (!file) {
     return;
   }
+  const type = state.pendingImportType;
+  state.pendingImportType = "";
 
   try {
-    showMessage("Importing selected XLSX...", "info");
-    const response = await fetch("/api/import", {
-      method: "POST",
-      headers: {
-        "content-type": "application/octet-stream",
-        "x-file-name": encodeURIComponent(file.name)
-      },
-      body: await file.arrayBuffer()
-    });
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Import failed.");
+    if (type === "xlsx") {
+      await importXlsxRun(file);
+      return;
     }
-    setRun(payload.run);
-    showMessage(payload.message, payload.existingProgressFound ? "warning" : "success");
-    await loadSavedRuns();
+    if (type === "json") {
+      await importJsonRun(file);
+      return;
+    }
+    if (type === "csv") {
+      await importCsvRun(file);
+      return;
+    }
+    showMessage("Choose an import type first.", "warning");
   } catch (error) {
     showMessage(error.message, "error");
   } finally {
-    event.target.value = "";
+    elements.importFileInput.value = "";
+    elements.importFileInput.accept = "";
   }
+}
+
+async function importXlsxRun(file) {
+  showMessage("Importing selected XLSX...", "info");
+  const response = await fetch("/api/import", {
+    method: "POST",
+    headers: {
+      "content-type": "application/octet-stream",
+      "x-file-name": encodeURIComponent(file.name)
+    },
+    body: await file.arrayBuffer()
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Import failed.");
+  }
+  setRun(payload.run);
+  showMessage(payload.message, payload.existingProgressFound ? "warning" : "success");
+  await loadSavedRuns();
+}
+
+async function importJsonRun(file) {
+  if (state.run && !confirm("Restore JSON progress and replace the currently loaded run?")) {
+    return;
+  }
+  showMessage("Restoring JSON progress...", "info");
+  const response = await fetch("/api/import-json", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: await file.text()
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "JSON restore failed.");
+  }
+  setRun(payload.run);
+  showMessage(payload.message, "success");
+  await loadSavedRuns();
+}
+
+async function importCsvRun(file) {
+  if (state.run && !confirm("Restore CSV progress and replace the currently loaded run?")) {
+    return;
+  }
+  showMessage("Restoring CSV progress...", "info");
+  const response = await fetch("/api/import-csv", {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent(file.name)
+    },
+    body: await file.text()
+  });
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "CSV restore failed.");
+  }
+  setRun(payload.run);
+  showMessage(payload.message, "success");
+  await loadSavedRuns();
 }
 
 async function loadSavedRuns() {
@@ -238,6 +319,7 @@ function render(options = {}) {
   elements.workspace.hidden = !hasRun;
   elements.exportJsonButton.disabled = !hasRun;
   elements.exportCsvButton.disabled = !hasRun;
+  elements.exportMenuSummary.setAttribute("aria-disabled", hasRun ? "false" : "true");
   if (!hasRun) {
     return;
   }
@@ -989,6 +1071,7 @@ function exportJson() {
   if (!state.run) {
     return;
   }
+  closeMenus();
   window.location.href = `/api/runs/${encodeURIComponent(state.run.id)}/export`;
 }
 
@@ -996,25 +1079,33 @@ function exportCsv() {
   if (!state.run) {
     return;
   }
+  closeMenus();
   const fields = [
-    "testId",
-    "caseId",
-    "title",
-    "section",
-    "priority",
-    "originalStatus",
-    "currentStatus",
-    "assignedTo",
-    "testedBy",
-    "testedOn",
-    "localNotes",
-    "localDefects",
-    "localEvidence",
-    "updatedAt"
+    ["Run ID", "runId"],
+    ["Run Name", "runName"],
+    ["Sheet Name", "sheetName"],
+    ["Source File Name", "sourceFileName"],
+    ["ID", "testId"],
+    ["Case ID", "caseId"],
+    ["Title", "title"],
+    ["Section", "section"],
+    ["Section Hierarchy", "sectionHierarchy"],
+    ["Original Status", "originalStatus"],
+    ["Current Status", "currentStatus"],
+    ["Local Notes", "localNotes"],
+    ["Local Defects", "localDefects"],
+    ["Local Evidence", "localEvidence"],
+    ["Updated At", "updatedAt"]
   ];
-  const rows = [fields.join(",")];
+  const rows = [fields.map(([name]) => name).join(",")];
   for (const testCase of state.run.cases) {
-    rows.push(fields.map((field) => csvEscape(testCase[field] || "")).join(","));
+    rows.push(fields.map(([, field]) => {
+      if (field === "runId") return csvEscape(state.run.runId || "");
+      if (field === "runName") return csvEscape(state.run.runName || "");
+      if (field === "sheetName") return csvEscape(state.run.sheetName || "");
+      if (field === "sourceFileName") return csvEscape(state.run.sourceFileName || "");
+      return csvEscape(testCase[field] || "");
+    }).join(","));
   }
   const blob = new Blob([`${rows.join("\n")}\n`], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
@@ -1105,4 +1196,10 @@ function csvEscape(value) {
     return `"${text.replaceAll('"', '""')}"`;
   }
   return text;
+}
+
+function closeMenus() {
+  for (const menu of elements.menuControls) {
+    menu.open = false;
+  }
 }

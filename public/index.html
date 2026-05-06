@@ -13,12 +13,22 @@
         <p id="runMeta">Import a TestRail XLSX run export to continue locally.</p>
       </div>
       <div class="topbar-actions">
-        <label class="file-button">
-          <input id="fileInput" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-          Import XLSX
-        </label>
-        <button id="exportJsonButton" type="button" disabled>Export JSON</button>
-        <button id="exportCsvButton" type="button" disabled>Export CSV</button>
+        <details class="menu-control">
+          <summary>Import</summary>
+          <div class="menu-panel" role="menu" aria-label="Import options">
+            <button id="importXlsxButton" type="button" role="menuitem">Import XLSX run</button>
+            <button id="importJsonButton" type="button" role="menuitem">Import JSON progress</button>
+            <button id="importCsvButton" type="button" role="menuitem">Import CSV progress</button>
+          </div>
+        </details>
+        <details class="menu-control">
+          <summary id="exportMenuSummary">Export</summary>
+          <div class="menu-panel" role="menu" aria-label="Export options">
+            <button id="exportJsonButton" type="button" role="menuitem">Export JSON progress</button>
+            <button id="exportCsvButton" type="button" role="menuitem">Export CSV progress</button>
+          </div>
+        </details>
+        <input id="importFileInput" type="file" hidden>
         <button id="resetLayoutButton" type="button">Reset layout</button>
       </div>
     </header>
