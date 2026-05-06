@@ -37,6 +37,42 @@ export async function listSavedRunsFromDir(progressDir, logger = console) {
   return runs.sort((left, right) => String(right.updatedAt).localeCompare(String(left.updatedAt)));
 }
 
+export async function readSavedRunFromDir(progressDir, id, logger = console) {
+  const filePath = progressPath(progressDir, id);
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+    if (error instanceof SyntaxError) {
+      logger.warn(`Skipping corrupted saved run: ${path.basename(filePath)}`);
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function writeRunAtomically(progressDir, id, run) {
+  await fs.mkdir(progressDir, { recursive: true });
+  const targetPath = progressPath(progressDir, id);
+  const tmpPath = `${targetPath}.${Date.now()}.${Math.random().toString(16).slice(2)}.tmp`;
+  const payload = `${JSON.stringify(run, null, 2)}\n`;
+
+  try {
+    await fs.writeFile(tmpPath, payload, "utf8");
+    await fs.rename(tmpPath, targetPath);
+  } catch (error) {
+    await fs.unlink(tmpPath).catch(() => {});
+    throw error;
+  }
+}
+
+export function progressPath(progressDir, id) {
+  const safeId = String(id || "run").replaceAll(/[^\w.-]+/g, "_");
+  return path.join(progressDir, `${safeId}.json`);
+}
+
 export function normalizePathname(pathname) {
   if (!pathname || pathname === "/") {
     return "/";

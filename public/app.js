@@ -15,11 +15,14 @@ import {
   sanitizeCaseListColumns,
   sanitizePanelWidths,
   parseSteps,
+  latestRunTimestamp,
+  resolveUnsavedRunRecovery,
   statuses
 } from "./model.js";
 
 const layoutStorageKey = "testrailLocalViewer.panelWidths.v1";
 const caseListColumnsStorageKey = "testrailLocalViewer.caseListColumns.v1";
+const unsavedRunPrefix = "testrailLocalViewer.unsavedRun.v1.";
 const importAcceptByType = {
   xlsx: ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   json: ".json,application/json",
@@ -45,6 +48,7 @@ const state = {
   activeResize: null,
   activeColumnResize: null,
   pendingImportType: "",
+  pendingRecoveredRun: null,
   filters: {
     search: "",
     currentStatus: "",
@@ -63,6 +67,10 @@ const elements = {
   exportMenuSummary: document.querySelector("#exportMenuSummary"),
   menuControls: [...document.querySelectorAll(".menu-control")],
   runMeta: document.querySelector("#runMeta"),
+  saveState: document.querySelector("#saveState"),
+  saveStateActions: document.querySelector("#saveStateActions"),
+  recoverUnsavedButton: document.querySelector("#recoverUnsavedButton"),
+  discardUnsavedButton: document.querySelector("#discardUnsavedButton"),
   message: document.querySelector("#message"),
   savedRuns: document.querySelector("#savedRuns"),
   refreshRunsButton: document.querySelector("#refreshRunsButton"),
@@ -106,6 +114,8 @@ elements.bulkApplyButton.addEventListener("click", applyBulkStatus);
 elements.bulkAppendNoteButton.addEventListener("click", appendBulkNote);
 elements.clearSelectionButton.addEventListener("click", clearSelection);
 elements.selectAllVisibleCheckbox.addEventListener("change", toggleAllVisibleSelection);
+elements.recoverUnsavedButton.addEventListener("click", recoverUnsavedChanges);
+elements.discardUnsavedButton.addEventListener("click", discardUnsavedChanges);
 window.addEventListener("mousemove", resizePanels);
 window.addEventListener("mouseup", stopResizingPanels);
 window.addEventListener("mousemove", resizeCaseListColumn);
@@ -190,8 +200,10 @@ async function importXlsxRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "Import failed.");
   }
-  setRun(payload.run);
-  showMessage(payload.message, payload.existingProgressFound ? "warning" : "success");
+  const recoveryAction = setRun(payload.run);
+  if (recoveryAction === "none") {
+    showMessage(payload.message, payload.existingProgressFound ? "warning" : "success");
+  }
   await loadSavedRuns();
 }
 
@@ -209,8 +221,10 @@ async function importJsonRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "JSON restore failed.");
   }
-  setRun(payload.run);
-  showMessage(payload.message, "success");
+  const recoveryAction = setRun(payload.run);
+  if (recoveryAction === "none") {
+    showMessage(payload.message, "success");
+  }
   await loadSavedRuns();
 }
 
@@ -231,8 +245,10 @@ async function importCsvRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "CSV restore failed.");
   }
-  setRun(payload.run);
-  showMessage(payload.message, "success");
+  const recoveryAction = setRun(payload.run);
+  if (recoveryAction === "none") {
+    showMessage(payload.message, "success");
+  }
   await loadSavedRuns();
 }
 
@@ -275,25 +291,45 @@ function renderSavedRuns(runs) {
 
 async function openSavedRun(id) {
   try {
-    const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
-    const payload = await response.json();
-    if (!response.ok) {
-      throw new Error(payload.error || "Could not open saved run.");
+    const run = await fetchRunById(id);
+    const recoveryAction = setRun(run);
+    if (recoveryAction === "none") {
+      showMessage("Saved local progress loaded.", "success");
     }
-    setRun(payload.run);
-    showMessage("Saved local progress loaded.", "success");
   } catch (error) {
     showMessage(error.message, "error");
   }
 }
 
-function setRun(run) {
-  state.run = run;
-  state.selectedLocalId = run.cases[0]?.localId || null;
+function setRun(run, options = {}) {
+  const { run: nextRun, recoveryAction } = applyUnsavedRecovery(run, options);
+  state.run = nextRun;
+  state.selectedLocalId = nextRun.cases[0]?.localId || null;
   state.selectedCaseIds = new Set();
-  state.expandedFolders = collectFolderIds(buildTreeFromCases(run.cases));
+  state.expandedFolders = collectFolderIds(buildTreeFromCases(nextRun.cases));
   resetFilterOptions();
   render({ preserveScroll: true });
+
+  if (recoveryAction === "discarded-stale") {
+    setSaveState("success", `Saved locally ${formatDateTime(state.run.savedAt || latestKnownUpdate(state.run))}`);
+    showMessage("Discarded stale unsaved browser cache because saved run was newer.", "warning");
+    return recoveryAction;
+  }
+
+  if (recoveryAction === "recovered") {
+    setSaveState("warning", "Recovered unsaved local changes from this browser. Save is pending.");
+    showMessage("Recovered unsaved local changes from browser cache.", "warning");
+    return recoveryAction;
+  }
+
+  if (recoveryAction === "pending-unsure") {
+    setSaveState("warning", "Unsaved browser changes found, but freshness could not be verified.");
+    showMessage("Unsaved browser changes found. Recover or discard them.", "warning");
+    return recoveryAction;
+  }
+
+  setSaveState("success", `Saved locally ${formatDateTime(state.run.savedAt || latestKnownUpdate(state.run))}`);
+  return "none";
 }
 
 function resetFilterOptions() {
@@ -837,6 +873,8 @@ async function appendBulkNote() {
 }
 
 async function saveProgress() {
+  cacheUnsavedRun(state.run);
+  setSaveState("info", "Saving locally...");
   const response = await fetch(`/api/runs/${encodeURIComponent(state.run.id)}`, {
     method: "PUT",
     headers: { "content-type": "application/json" },
@@ -844,9 +882,12 @@ async function saveProgress() {
   });
   const payload = await response.json();
   if (!response.ok) {
+    setSaveState("error", "Save failed. Changes are cached in this browser.");
     throw new Error(payload.error || "Could not save progress.");
   }
   state.run = payload.run;
+  clearUnsavedRun(state.run.id);
+  setSaveState("success", `Saved locally ${formatDateTime(state.run.savedAt || latestKnownUpdate(state.run))}`);
 }
 
 function filteredCases() {
@@ -1176,6 +1217,133 @@ function showMessage(text, type) {
   elements.message.hidden = false;
   elements.message.textContent = text;
   elements.message.className = `message ${type}`;
+}
+
+function setSaveState(type, text) {
+  if (!elements.saveState) {
+    return;
+  }
+  elements.saveState.hidden = false;
+  elements.saveState.textContent = text;
+  elements.saveState.className = `save-state ${type}`;
+}
+
+function setSaveStateActions({ showRecover = false, showDiscard = false } = {}) {
+  if (!elements.saveStateActions) {
+    return;
+  }
+  elements.saveStateActions.hidden = !showRecover && !showDiscard;
+  elements.recoverUnsavedButton.hidden = !showRecover;
+  elements.discardUnsavedButton.hidden = !showDiscard;
+}
+
+function unsavedRunStorageKey(runId) {
+  return `${unsavedRunPrefix}${String(runId || "run")}`;
+}
+
+function cacheUnsavedRun(run) {
+  if (!run?.id) {
+    return;
+  }
+  try {
+    localStorage.setItem(
+      unsavedRunStorageKey(run.id),
+      JSON.stringify({
+        run,
+        cachedAt: new Date().toISOString()
+      })
+    );
+  } catch (error) {
+    console.warn("Could not cache unsaved progress locally.", error);
+  }
+}
+
+function clearUnsavedRun(runId) {
+  if (!runId) {
+    return;
+  }
+  localStorage.removeItem(unsavedRunStorageKey(runId));
+}
+
+function applyUnsavedRecovery(run, options = {}) {
+  setSaveStateActions();
+  state.pendingRecoveredRun = null;
+  if (options.skipRecovery) {
+    return { run, recoveryAction: "none" };
+  }
+  if (!run?.id) {
+    return { run, recoveryAction: "none" };
+  }
+  try {
+    const cached = localStorage.getItem(unsavedRunStorageKey(run.id));
+    if (!cached) {
+      return { run, recoveryAction: "none" };
+    }
+    const parsed = JSON.parse(cached);
+    const decision = resolveUnsavedRunRecovery(run, parsed);
+    if (decision.action === "apply") {
+      setSaveStateActions({ showDiscard: true });
+      return { run: decision.run, recoveryAction: "recovered" };
+    }
+    if (decision.action === "discard") {
+      clearUnsavedRun(run.id);
+      return { run, recoveryAction: "discarded-stale" };
+    }
+    if (decision.action === "pending") {
+      state.pendingRecoveredRun = decision.run;
+      setSaveStateActions({ showRecover: true, showDiscard: true });
+      return { run, recoveryAction: "pending-unsure" };
+    }
+    return { run, recoveryAction: "none" };
+  } catch (error) {
+    console.warn("Could not restore unsaved progress cache.", error);
+    return { run, recoveryAction: "none" };
+  }
+}
+
+function latestKnownUpdate(run) {
+  const timestamp = latestRunTimestamp(run);
+  return timestamp ? new Date(timestamp).toISOString() : "";
+}
+
+async function fetchRunById(id) {
+  const response = await fetch(`/api/runs/${encodeURIComponent(id)}`);
+  const payload = await response.json();
+  if (!response.ok) {
+    throw new Error(payload.error || "Could not open saved run.");
+  }
+  return payload.run;
+}
+
+function recoverUnsavedChanges() {
+  if (!state.pendingRecoveredRun) {
+    return;
+  }
+  setRun(state.pendingRecoveredRun, { skipRecovery: true });
+  cacheUnsavedRun(state.run);
+  setSaveState("warning", "Recovered unsaved browser changes.");
+  setSaveStateActions({ showDiscard: true });
+  showMessage("Recovered unsaved browser changes.", "warning");
+  state.pendingRecoveredRun = null;
+}
+
+async function discardUnsavedChanges() {
+  if (!state.run?.id) {
+    return;
+  }
+  const runId = state.run.id;
+  clearUnsavedRun(runId);
+  state.pendingRecoveredRun = null;
+  setSaveStateActions();
+  try {
+    const freshRun = await fetchRunById(runId);
+    setRun(freshRun, { skipRecovery: true });
+    setSaveState("success", `Saved locally ${formatDateTime(freshRun.savedAt || latestKnownUpdate(freshRun))}`);
+    showMessage("Discarded unsaved browser changes.", "success");
+  } catch (error) {
+    setSaveState("error", "Could not reload saved run after discarding cache.");
+    showMessage(error.message, "error");
+  }
 }
 
 function hasLocalNotes(testCase) {

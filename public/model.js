@@ -70,6 +70,48 @@ export function calculateRunStats(cases) {
   };
 }
 
+export function latestRunTimestamp(run) {
+  if (!run || typeof run !== "object") {
+    return null;
+  }
+  const values = [];
+  values.push(parseTimestamp(run.savedAt));
+  values.push(parseTimestamp(run.importedAt));
+  if (Array.isArray(run.cases)) {
+    for (const testCase of run.cases) {
+      values.push(parseTimestamp(testCase?.updatedAt));
+    }
+  }
+  const valid = values.filter((value) => value !== null);
+  return valid.length ? Math.max(...valid) : null;
+}
+
+export function resolveUnsavedRunRecovery(serverRun, cachedEnvelope) {
+  const cachedRun = cachedEnvelope?.run;
+  if (!cachedRun || typeof cachedRun !== "object" || !Array.isArray(cachedRun.cases)) {
+    return { action: "none", reason: "missing-cache" };
+  }
+  if (!serverRun || cachedRun.id !== serverRun.id) {
+    return { action: "none", reason: "id-mismatch" };
+  }
+
+  const cacheTimestamp = parseTimestamp(cachedEnvelope.cachedAt) ?? latestRunTimestamp(cachedRun);
+  const serverTimestamp = latestRunTimestamp(serverRun);
+
+  if (cacheTimestamp !== null && serverTimestamp !== null) {
+    if (cacheTimestamp > serverTimestamp) {
+      return { action: "apply", reason: "cache-newer", run: cachedRun };
+    }
+    return { action: "discard", reason: "server-newer-or-equal" };
+  }
+
+  return {
+    action: "pending",
+    reason: "timestamp-unknown",
+    run: cachedRun
+  };
+}
+
 export function sanitizePanelWidths(widths = {}) {
   return {
     tree: clampPanelWidth(widths.tree, "tree"),
@@ -354,6 +396,14 @@ function sectionPath(testCase) {
   }
   const section = String(testCase.section || "").trim();
   return [section || "Unsectioned"];
+}
+
+function parseTimestamp(value) {
+  if (!value) {
+    return null;
+  }
+  const timestamp = Date.parse(value);
+  return Number.isFinite(timestamp) ? timestamp : null;
 }
 
 function caseSectionLabel(testCase) {
