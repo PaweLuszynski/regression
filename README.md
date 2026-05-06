@@ -16,14 +16,39 @@ To use a different port:
 PORT=4180 npm start
 ```
 
-## Import the XLSX
+## Import Data
 
-1. Open the app in the browser.
-2. Click `Import XLSX`.
-3. Select a compatible TestRail XLSX run export.
-4. The app parses the `Worksheet` sheet and displays the imported run.
+Use the `Import` menu in the top bar:
+
+1. `Import XLSX run`
+2. `Import JSON progress`
+3. `Import CSV progress`
+
+For XLSX, the app parses the `Worksheet` sheet and displays the imported run.
 
 The parser reads the first row as headers, preserves duplicate headers as normalized keys such as `Steps` and `Steps__2`, and keeps the full original imported row in `rawRow`.
+
+## Restore JSON Progress
+
+Use `Import -> Import JSON progress` to load a JSON progress file previously exported by this app.
+
+If another run is already open, the app asks for confirmation before replacing the current view. Restored JSON progress is saved into the same local progress directory as XLSX imports, then behaves like any other local run: status updates, notes, bulk actions, `Pass & Next`, and JSON export continue to work.
+
+The restore flow validates the JSON shape, preserves unknown fields, keeps `rawRow`, and keeps imported fields such as `originalStatus` separate from local fields such as `currentStatus`.
+
+## Restore CSV Progress
+
+Use `Import -> Import CSV progress` to load a CSV file previously exported by this app.
+
+CSV restore supports lightweight progress recovery: test IDs, case IDs, titles, sections, section hierarchy, original/current statuses, local notes, local defects, local evidence, and update timestamps when those columns exist.
+
+CSV does not include full rich run details. Missing fields such as full raw worksheet content, step structures, preconditions, expected results, and other non-exported metadata are intentionally left empty during CSV restore.
+
+CSV validation includes:
+
+- empty CSV detection
+- missing required columns detection (`ID`/`Test ID`, `Title`, and `Current Status`/`Status`)
+- malformed quoted CSV detection
 
 ## Local Progress
 
@@ -43,9 +68,14 @@ If a saved progress file already exists for the same run key, importing the same
 
 ## Export Results
 
-Use `Export JSON` in the app to download the current local run state. The JSON includes run metadata, original columns, all test cases, original status, current local status, local notes, local defects, local evidence, timestamps, and `rawRow`.
+Use the `Export` menu in the top bar:
 
-`Export CSV` downloads the main editable execution fields for quick review.
+- `Export JSON progress`
+- `Export CSV progress`
+
+JSON export includes run metadata, original columns, all test cases, original status, current local status, local notes, local defects, local evidence, timestamps, and `rawRow`.
+
+CSV export includes enough fields for lightweight restore: run metadata columns plus `ID`, `Case ID`, `Title`, `Section`, `Section Hierarchy`, `Original Status`, `Current Status`, `Local Notes`, `Local Defects`, `Local Evidence`, and `Updated At`.
 
 ## Using the Dashboard
 

@@ -56,6 +56,62 @@ button:hover,
   border-color: var(--accent);
 }
 
+.menu-control {
+  position: relative;
+}
+
+.menu-control summary {
+  list-style: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+  padding: 8px 11px;
+  user-select: none;
+}
+
+.menu-control summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-control[open] summary,
+.menu-control summary:hover {
+  border-color: var(--accent);
+}
+
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 6px);
+  z-index: 20;
+  min-width: 190px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  box-shadow: 0 8px 16px rgba(15, 23, 42, 0.12);
+  padding: 6px;
+  display: grid;
+  gap: 4px;
+}
+
+.menu-panel button {
+  border: 0;
+  border-radius: 4px;
+  text-align: left;
+  padding: 8px 10px;
+}
+
+.menu-panel button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+}
+
+.menu-panel button:hover:not(:disabled) {
+  background: #edf7fa;
+  border-color: transparent;
+}
+
 .topbar {
   display: flex;
   align-items: center;
