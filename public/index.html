@@ -43,10 +43,34 @@
 
       <section class="saved-runs">
         <div class="section-heading">
-          <h2>Saved Local Runs</h2>
-          <button id="refreshRunsButton" type="button">Refresh</button>
+          <div class="section-heading-copy">
+            <h2>Saved Local Runs</h2>
+            <p id="savedRunsSummary" class="section-summary">No saved local runs yet.</p>
+          </div>
+          <div class="saved-runs-actions">
+            <label class="saved-runs-sort">
+              <span>Sort</span>
+              <select id="savedRunsSortSelect" aria-label="Sort saved runs">
+                <option value="newest">Newest first</option>
+                <option value="oldest">Oldest first</option>
+                <option value="run-name">Run name</option>
+                <option value="run-id">Run ID</option>
+              </select>
+            </label>
+            <button id="refreshRunsButton" type="button">Refresh</button>
+            <button
+              id="toggleSavedRunsButton"
+              type="button"
+              aria-expanded="true"
+              aria-controls="savedRunsPanel"
+            >
+              Collapse
+            </button>
+          </div>
         </div>
-        <div id="savedRuns" class="saved-run-list"></div>
+        <div id="savedRunsPanel">
+          <div id="savedRuns" class="saved-run-list"></div>
+        </div>
       </section>
 
       <section id="workspace" class="workspace" hidden>

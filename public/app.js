@@ -6,6 +6,7 @@ import {
   caseListColumnDefaults,
   calculateRunStats,
   getNextCaseId,
+  getNextSavedRunIdAfterDeletion,
   getStatusColor,
   getVisibleCaseOrder,
   groupCasesBySection,
@@ -17,12 +18,16 @@ import {
   parseSteps,
   latestRunTimestamp,
   resolveUnsavedRunRecovery,
+  sortSavedRuns,
   statuses
 } from "./model.js";
 
 const layoutStorageKey = "testrailLocalViewer.panelWidths.v1";
 const caseListColumnsStorageKey = "testrailLocalViewer.caseListColumns.v1";
+const savedRunsCollapsedStorageKey = "testrailLocalViewer.savedRunsCollapsed.v1";
+const savedRunsSortStorageKey = "testrailLocalViewer.savedRunsSort.v1";
 const unsavedRunPrefix = "testrailLocalViewer.unsavedRun.v1.";
+const defaultRunMetaText = "Import a TestRail XLSX run export to continue locally.";
 const importAcceptByType = {
   xlsx: ".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   json: ".json,application/json",
@@ -49,6 +54,9 @@ const state = {
   activeColumnResize: null,
   pendingImportType: "",
   pendingRecoveredRun: null,
+  savedRuns: [],
+  savedRunsCollapsed: loadSavedRunsCollapsed(),
+  savedRunsSort: loadSavedRunsSort(),
   filters: {
     search: "",
     currentStatus: "",
@@ -72,7 +80,11 @@ const elements = {
   recoverUnsavedButton: document.querySelector("#recoverUnsavedButton"),
   discardUnsavedButton: document.querySelector("#discardUnsavedButton"),
   message: document.querySelector("#message"),
+  savedRunsSummary: document.querySelector("#savedRunsSummary"),
   savedRuns: document.querySelector("#savedRuns"),
+  savedRunsPanel: document.querySelector("#savedRunsPanel"),
+  savedRunsSortSelect: document.querySelector("#savedRunsSortSelect"),
+  toggleSavedRunsButton: document.querySelector("#toggleSavedRunsButton"),
   refreshRunsButton: document.querySelector("#refreshRunsButton"),
   workspace: document.querySelector("#workspace"),
   summary: document.querySelector("#summary"),
@@ -106,6 +118,8 @@ elements.importXlsxButton.addEventListener("click", () => startImport("xlsx"));
 elements.importJsonButton.addEventListener("click", () => startImport("json"));
 elements.importCsvButton.addEventListener("click", () => startImport("csv"));
 elements.refreshRunsButton.addEventListener("click", loadSavedRuns);
+elements.savedRunsSortSelect.addEventListener("change", updateSavedRunsSort);
+elements.toggleSavedRunsButton.addEventListener("click", toggleSavedRunsCollapsed);
 elements.clearFiltersButton.addEventListener("click", clearFilters);
 elements.exportJsonButton.addEventListener("click", exportJson);
 elements.exportCsvButton.addEventListener("click", exportCsv);
@@ -132,6 +146,8 @@ for (const handle of document.querySelectorAll("[data-case-column]")) {
 applyPanelWidths();
 applyCaseListColumns();
 fillSelect(elements.bulkStatusSelect, "Choose status", statuses);
+elements.savedRunsSortSelect.value = state.savedRunsSort;
+applySavedRunsSectionState();
 
 for (const [key, element] of [
   ["search", elements.searchInput],
@@ -259,14 +275,20 @@ async function loadSavedRuns() {
     if (!response.ok) {
       throw new Error(payload.error || "Could not load saved runs.");
     }
-    renderSavedRuns(payload.runs);
+    state.savedRuns = Array.isArray(payload.runs) ? payload.runs : [];
+    renderSavedRuns();
   } catch (error) {
     showMessage(error.message, "error");
   }
 }
 
-function renderSavedRuns(runs) {
+function renderSavedRuns() {
+  const runs = sortSavedRuns(state.savedRuns, state.savedRunsSort);
+  applySavedRunsSectionState(runs);
   elements.savedRuns.replaceChildren();
+  if (state.savedRunsCollapsed) {
+    return;
+  }
   if (runs.length === 0) {
     const empty = document.createElement("p");
     empty.className = "muted";
@@ -276,17 +298,61 @@ function renderSavedRuns(runs) {
   }
 
   for (const run of runs) {
+    const item = document.createElement("article");
+    item.className = "saved-run-item";
     const button = document.createElement("button");
     button.type = "button";
     button.className = "saved-run";
     button.addEventListener("click", () => openSavedRun(run.id));
     button.append(
-      textElement("strong", run.runName || run.id),
+      titleElement(run),
       textElement("span", `${run.runId || "No run ID"} · ${run.cases} tests`),
       textElement("span", `Updated ${formatDateTime(run.updatedAt)}`)
     );
-    elements.savedRuns.append(button);
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.className = "saved-run-delete";
+    deleteButton.textContent = "Delete";
+    deleteButton.title = `Delete saved run ${run.runName || run.id}`;
+    deleteButton.setAttribute("aria-label", `Delete saved run ${run.runName || run.id}`);
+    deleteButton.addEventListener("click", async () => {
+      await deleteSavedRun(run.id);
+    });
+    item.append(button, deleteButton);
+    elements.savedRuns.append(item);
   }
+}
+
+function titleElement(run) {
+  const wrapper = document.createElement("span");
+  wrapper.className = "saved-run-title";
+  wrapper.append(textElement("strong", run.runName || run.id));
+  if (state.run?.id === run.id) {
+    wrapper.append(textElement("span", "Active", "status-badge status-in-test"));
+  }
+  return wrapper;
+}
+
+function applySavedRunsSectionState(runs = state.savedRuns) {
+  const count = Array.isArray(runs) ? runs.length : 0;
+  const countLabel = `${count} saved local ${count === 1 ? "run" : "runs"}`;
+  elements.savedRunsSummary.textContent = state.savedRunsCollapsed ? `${countLabel} hidden.` : `${countLabel}.`;
+  elements.savedRunsPanel.hidden = state.savedRunsCollapsed;
+  elements.toggleSavedRunsButton.textContent = state.savedRunsCollapsed ? "Expand" : "Collapse";
+  elements.toggleSavedRunsButton.setAttribute("aria-expanded", state.savedRunsCollapsed ? "false" : "true");
+  elements.savedRunsSortSelect.disabled = count === 0;
+}
+
+function updateSavedRunsSort() {
+  state.savedRunsSort = normalizeSavedRunsSort(elements.savedRunsSortSelect.value);
+  localStorage.setItem(savedRunsSortStorageKey, state.savedRunsSort);
+  renderSavedRuns();
+}
+
+function toggleSavedRunsCollapsed() {
+  state.savedRunsCollapsed = !state.savedRunsCollapsed;
+  localStorage.setItem(savedRunsCollapsedStorageKey, String(state.savedRunsCollapsed));
+  renderSavedRuns();
 }
 
 async function openSavedRun(id) {
@@ -301,6 +367,44 @@ async function openSavedRun(id) {
   }
 }
 
+async function deleteSavedRun(runId) {
+  const runSummary = state.savedRuns.find((run) => run.id === runId);
+  const runLabel = runSummary?.runName || runId;
+  if (!confirm(`Delete saved run "${runLabel}"? This removes only local saved progress.`)) {
+    return;
+  }
+
+  const deletingActiveRun = state.run?.id === runId;
+  const nextRunId = getNextSavedRunIdAfterDeletion(state.savedRuns, runId, state.run?.id, state.savedRunsSort);
+
+  try {
+    const response = await fetch(`/api/runs/${encodeURIComponent(runId)}`, { method: "DELETE" });
+    const payload = await response.json();
+    if (!response.ok) {
+      throw new Error(payload.error || "Could not delete saved run.");
+    }
+
+    clearUnsavedRun(runId);
+    await loadSavedRuns();
+
+    if (deletingActiveRun) {
+      if (nextRunId) {
+        const nextRun = await fetchRunById(nextRunId);
+        setRun(nextRun);
+        showMessage("Saved run deleted. Switched to the next saved run.", "success");
+        return;
+      }
+      clearActiveRun();
+      showMessage("Saved run deleted. No saved runs remain open.", "success");
+      return;
+    }
+
+    showMessage("Saved run deleted.", "success");
+  } catch (error) {
+    showMessage(error.message, "error");
+  }
+}
+
 function setRun(run, options = {}) {
   const { run: nextRun, recoveryAction } = applyUnsavedRecovery(run, options);
   state.run = nextRun;
@@ -309,6 +413,7 @@ function setRun(run, options = {}) {
   state.expandedFolders = collectFolderIds(buildTreeFromCases(nextRun.cases));
   resetFilterOptions();
   render({ preserveScroll: true });
+  renderSavedRuns();
 
   if (recoveryAction === "discarded-stale") {
     setSaveState("success", `Saved locally ${formatDateTime(state.run.savedAt || latestKnownUpdate(state.run))}`);
@@ -330,6 +435,20 @@ function setRun(run, options = {}) {
 
   setSaveState("success", `Saved locally ${formatDateTime(state.run.savedAt || latestKnownUpdate(state.run))}`);
   return "none";
+}
+
+function clearActiveRun() {
+  state.run = null;
+  state.selectedLocalId = null;
+  state.selectedCaseIds = new Set();
+  state.expandedFolders = new Set();
+  state.pendingRecoveredRun = null;
+  resetFilterOptions();
+  elements.runMeta.textContent = defaultRunMetaText;
+  elements.saveState.hidden = true;
+  setSaveStateActions();
+  render({ preserveScroll: true });
+  renderSavedRuns();
 }
 
 function resetFilterOptions() {
@@ -1098,6 +1217,18 @@ function loadCaseListColumns() {
 
 function saveCaseListColumns() {
   localStorage.setItem(caseListColumnsStorageKey, JSON.stringify(state.caseListColumns));
+}
+
+function loadSavedRunsCollapsed() {
+  return localStorage.getItem(savedRunsCollapsedStorageKey) === "true";
+}
+
+function loadSavedRunsSort() {
+  return normalizeSavedRunsSort(localStorage.getItem(savedRunsSortStorageKey) || "newest");
+}
+
+function normalizeSavedRunsSort(value) {
+  return ["newest", "oldest", "run-name", "run-id"].includes(value) ? value : "newest";
 }
 
 function withCaseListScrollPreserved(callback) {
