@@ -7,12 +7,14 @@ import {
   applyStatusToCases,
   buildTreeFromCases,
   calculateRunStats,
+  getNextSavedRunIdAfterDeletion,
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
   getStatusColor,
   groupCasesBySection,
   resolveUnsavedRunRecovery,
+  sortSavedRuns,
   resizeCaseListColumns,
   resizePanelWidths,
   sanitizeCaseListColumns,
@@ -380,4 +382,50 @@ test("latestRunTimestamp returns most recent valid timestamp from run fields", (
   });
 
   assert.equal(timestamp, Date.parse("2026-05-06T12:00:00.000Z"));
+});
+
+test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {
+  const runs = [
+    {
+      id: "run-c",
+      runName: "Zulu",
+      runId: "R-20",
+      importedAt: "2026-05-06T08:00:00.000Z",
+      savedAt: "2026-05-06T09:00:00.000Z",
+      updatedAt: "2026-05-06T09:00:00.000Z"
+    },
+    {
+      id: "run-a",
+      runName: "Alpha",
+      runId: "R-02",
+      importedAt: "2026-05-06T07:00:00.000Z",
+      savedAt: "2026-05-06T12:00:00.000Z",
+      updatedAt: "2026-05-06T12:00:00.000Z"
+    },
+    {
+      id: "run-b",
+      runName: "Bravo",
+      runId: "R-10",
+      importedAt: "2026-05-06T06:00:00.000Z",
+      savedAt: "2026-05-06T10:00:00.000Z",
+      updatedAt: "2026-05-06T10:00:00.000Z"
+    }
+  ];
+
+  assert.deepEqual(sortSavedRuns(runs, "newest").map((run) => run.id), ["run-a", "run-b", "run-c"]);
+  assert.deepEqual(sortSavedRuns(runs, "oldest").map((run) => run.id), ["run-c", "run-b", "run-a"]);
+  assert.deepEqual(sortSavedRuns(runs, "run-name").map((run) => run.id), ["run-a", "run-b", "run-c"]);
+  assert.deepEqual(sortSavedRuns(runs, "run-id").map((run) => run.id), ["run-a", "run-b", "run-c"]);
+});
+
+test("getNextSavedRunIdAfterDeletion switches only when the active run was deleted", () => {
+  const runs = [
+    { id: "run-a", runName: "Alpha", runId: "R-02", updatedAt: "2026-05-06T12:00:00.000Z" },
+    { id: "run-b", runName: "Bravo", runId: "R-10", updatedAt: "2026-05-06T10:00:00.000Z" },
+    { id: "run-c", runName: "Zulu", runId: "R-20", updatedAt: "2026-05-06T09:00:00.000Z" }
+  ];
+
+  assert.equal(getNextSavedRunIdAfterDeletion(runs, "run-b", "run-b", "newest"), "run-a");
+  assert.equal(getNextSavedRunIdAfterDeletion(runs, "run-c", "run-a", "newest"), "run-a");
+  assert.equal(getNextSavedRunIdAfterDeletion([{ id: "run-a" }], "run-a", "run-a", "newest"), null);
 });

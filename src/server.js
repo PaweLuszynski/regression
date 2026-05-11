@@ -7,6 +7,8 @@ import { parseTestRailRunFromBuffer } from "./parser.js";
 import { parseRunProgressCsv } from "./run-csv.js";
 import { parseRunProgressJson } from "./run-json.js";
 import {
+  deleteSavedRunFromDir,
+  isSafeRunId,
   listSavedRunsFromDir,
   normalizePathname,
   parseJsonText,
@@ -132,6 +134,18 @@ async function route(request, response) {
     }
     await saveRun(run);
     return sendJson(response, 200, { run, message: "Progress saved." });
+  }
+
+  if (runMatch && request.method === "DELETE") {
+    const runId = runMatch[1];
+    if (!isSafeRunId(runId)) {
+      return sendJson(response, 400, { error: "Invalid saved run ID." });
+    }
+    const result = await deleteSavedRunFromDir(progressDir, runId);
+    if (!result.deleted) {
+      return sendJson(response, 404, { error: "Saved run was not found." });
+    }
+    return sendJson(response, 200, { message: "Saved run deleted." });
   }
 
   const exportMatch = pathname.match(/^\/api\/runs\/([^/]+)\/export$/);

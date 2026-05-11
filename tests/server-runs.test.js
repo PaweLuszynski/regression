@@ -5,6 +5,8 @@ import { mkdtemp, readdir, writeFile } from "node:fs/promises";
 import { test } from "node:test";
 
 import {
+  deleteSavedRunFromDir,
+  isSafeRunId,
   listSavedRunsFromDir,
   normalizePathname,
   parseJsonText,
@@ -87,4 +89,33 @@ test("readSavedRunFromDir returns null and warns for corrupted saved run", async
   assert.equal(run, null);
   assert.equal(warnings.length, 1);
   assert.match(warnings[0], /Skipping corrupted saved run: R-broken\.json/);
+});
+
+test("deleteSavedRunFromDir removes only the targeted saved run file", async () => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-progress-"));
+  await writeRunAtomically(progressDir, "run-a", { id: "run-a", cases: [] });
+  await writeRunAtomically(progressDir, "run-b", { id: "run-b", cases: [] });
+
+  const result = await deleteSavedRunFromDir(progressDir, "run-a");
+
+  assert.equal(result.deleted, true);
+  assert.equal(await readSavedRunFromDir(progressDir, "run-a"), null);
+  assert.deepEqual((await readSavedRunFromDir(progressDir, "run-b")).id, "run-b");
+});
+
+test("deleteSavedRunFromDir reports missing runs without deleting anything else", async () => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-progress-"));
+  await writeRunAtomically(progressDir, "run-a", { id: "run-a", cases: [] });
+
+  const result = await deleteSavedRunFromDir(progressDir, "missing-run");
+
+  assert.equal(result.deleted, false);
+  assert.equal((await readSavedRunFromDir(progressDir, "run-a")).id, "run-a");
+});
+
+test("isSafeRunId rejects path traversal and empty identifiers", () => {
+  assert.equal(isSafeRunId("run-1"), true);
+  assert.equal(isSafeRunId("folder/../run"), false);
+  assert.equal(isSafeRunId("../run"), false);
+  assert.equal(isSafeRunId(""), false);
 });

@@ -86,6 +86,39 @@ export function latestRunTimestamp(run) {
   return valid.length ? Math.max(...valid) : null;
 }
 
+export function sortSavedRuns(runs, sortKey = "newest") {
+  const items = Array.isArray(runs) ? [...runs] : [];
+  const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+
+  items.sort((left, right) => {
+    if (sortKey === "oldest") {
+      return compareRunTimestamp(left, right) || compareRunText(left.runName || left.id, right.runName || right.id, collator);
+    }
+    if (sortKey === "run-name") {
+      return compareRunText(left.runName || left.id, right.runName || right.id, collator)
+        || compareRunText(left.runId || left.id, right.runId || right.id, collator);
+    }
+    if (sortKey === "run-id") {
+      return compareRunText(left.runId || left.id, right.runId || right.id, collator)
+        || compareRunText(left.runName || left.id, right.runName || right.id, collator);
+    }
+    return compareRunTimestamp(right, left) || compareRunText(left.runName || left.id, right.runName || right.id, collator);
+  });
+
+  return items;
+}
+
+export function getNextSavedRunIdAfterDeletion(runs, deletedRunId, activeRunId, sortKey = "newest") {
+  if (!deletedRunId || activeRunId !== deletedRunId) {
+    return activeRunId || null;
+  }
+  const remainingRuns = sortSavedRuns(
+    (Array.isArray(runs) ? runs : []).filter((run) => run?.id !== deletedRunId),
+    sortKey
+  );
+  return remainingRuns[0]?.id || null;
+}
+
 export function resolveUnsavedRunRecovery(serverRun, cachedEnvelope) {
   const cachedRun = cachedEnvelope?.run;
   if (!cachedRun || typeof cachedRun !== "object" || !Array.isArray(cachedRun.cases)) {
@@ -404,6 +437,18 @@ function parseTimestamp(value) {
   }
   const timestamp = Date.parse(value);
   return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function compareRunTimestamp(left, right) {
+  return savedRunTimestamp(left) - savedRunTimestamp(right);
+}
+
+function savedRunTimestamp(run) {
+  return latestRunTimestamp(run) ?? 0;
+}
+
+function compareRunText(left, right, collator) {
+  return collator.compare(String(left || ""), String(right || ""));
 }
 
 function caseSectionLabel(testCase) {

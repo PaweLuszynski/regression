@@ -29,6 +29,7 @@ export async function listSavedRunsFromDir(progressDir, logger = console) {
       sourceFileName: run.sourceFileName,
       sheetName: run.sheetName,
       importedAt: run.importedAt,
+      savedAt: run.savedAt,
       cases: Array.isArray(run.cases) ? run.cases.length : 0,
       updatedAt: latestCaseUpdate(run)
     });
@@ -68,9 +69,26 @@ export async function writeRunAtomically(progressDir, id, run) {
   }
 }
 
+export async function deleteSavedRunFromDir(progressDir, id) {
+  const targetPath = progressPath(progressDir, id);
+  try {
+    await fs.unlink(targetPath);
+    return { deleted: true };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return { deleted: false };
+    }
+    throw error;
+  }
+}
+
 export function progressPath(progressDir, id) {
   const safeId = String(id || "run").replaceAll(/[^\w.-]+/g, "_");
   return path.join(progressDir, `${safeId}.json`);
+}
+
+export function isSafeRunId(id) {
+  return /^[A-Za-z0-9_.-]+$/.test(String(id || ""));
 }
 
 export function normalizePathname(pathname) {
