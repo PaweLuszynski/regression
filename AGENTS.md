@@ -166,10 +166,12 @@ Agents must:
 - support only these workflow statuses:
   - `backlog`
   - `in-progress`
+  - `review`
   - `done`
 - add new tasks to the `Backlog` column by creating the note with `status: backlog`
 - when work starts, update the note frontmatter to `status: in-progress`
-- when work completes, update the note frontmatter to `status: done`
+- when implementation is complete and automated checks pass, update the note frontmatter to `status: review`
+- only move a task to `done` after the user confirms manual testing/approval or explicitly asks to mark it done
 - rebuild the Kanban board from current task metadata instead of hand-editing partial board state when possible
 - keep note links valid and stable
 - preserve existing task note content unless the requested task requires changing it
@@ -179,7 +181,8 @@ Agents must:
 Trigger rules:
 
 - when starting work on an existing tracked task, immediately set that task to `in-progress`
-- when finishing work on an existing tracked task, immediately set that task to `done`
+- when implementation is complete and automated checks pass for an existing tracked task, immediately set that task to `review`
+- when the user confirms manual testing/approval or explicitly asks to close the tracked task, immediately set that task to `done`
 - when discovering a new piece of work worth tracking, immediately create a new task note in `projects/issues/` with `status: backlog`
 - after creating a task note, rebuild the Kanban board
 - after changing any task status, rebuild the Kanban board
@@ -188,5 +191,6 @@ Preferred commands:
 
 - `node scripts/task-workflow.js create --title "Task title"`
 - `node scripts/task-workflow.js status TASK-0001 in-progress`
+- `node scripts/task-workflow.js status TASK-0001 review`
 - `node scripts/task-workflow.js status TASK-0001 done`
 - `node scripts/task-workflow.js rebuild`

@@ -8,10 +8,11 @@ import {
 } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 
-const STATUS_ORDER = ["backlog", "in-progress", "done"];
+const STATUS_ORDER = ["backlog", "in-progress", "review", "done"];
 const STATUS_TO_COLUMN = {
   backlog: "Backlog",
   "in-progress": "In Progress",
+  review: "Review",
   done: "Done"
 };
 
@@ -93,7 +94,10 @@ function parseFrontmatter(content) {
     activeListKey = null;
   }
 
-  return { data };
+  return {
+    data,
+    body: content.slice(endIndex + "\n---\n".length)
+  };
 }
 
 function stripYamlValue(value) {
@@ -107,7 +111,7 @@ function stripYamlValue(value) {
   return trimmed;
 }
 
-function renderTaskNote(task) {
+function renderTaskFrontmatter(task) {
   const tags = Array.isArray(task.tags) && task.tags.length > 0 ? task.tags : ["project"];
   return `---
 id: ${task.id}
@@ -119,9 +123,15 @@ created: ${task.created}
 updated: ${task.updated}
 tags:
 ${tags.map((tag) => `  - ${tag}`).join("\n")}
----
+`;
+}
 
-# ${task.title}
+function renderTaskNote(task, body = defaultTaskBody(task.title)) {
+  return `${renderTaskFrontmatter(task)}---\n\n${body}`;
+}
+
+function defaultTaskBody(title) {
+  return `# ${title}
 
 ## Summary
 
@@ -178,6 +188,7 @@ function renderBoard(tasks) {
   const grouped = {
     backlog: [],
     "in-progress": [],
+    review: [],
     done: []
   };
 
@@ -273,7 +284,7 @@ export async function updateTaskStatus(repoRoot = process.cwd(), identifier, sta
   const now = options.now || new Date().toISOString();
   const task = await findTaskByIdentifier(repoRoot, identifier);
   const content = await readFile(task.filePath, "utf8");
-  const { data } = parseFrontmatter(content);
+  const { data, body } = parseFrontmatter(content);
 
   const updatedTask = {
     ...task,
@@ -286,7 +297,7 @@ export async function updateTaskStatus(repoRoot = process.cwd(), identifier, sta
     tags: Array.isArray(data.tags) ? data.tags : task.tags
   };
 
-  await writeFile(task.filePath, renderTaskNote(updatedTask), "utf8");
+  await writeFile(task.filePath, renderTaskNote(updatedTask, body), "utf8");
   await rebuildBoard(repoRoot);
   return { task: updatedTask };
 }
@@ -317,7 +328,7 @@ async function runCli() {
 
   if (command === "status") {
     if (rest.length < 2) {
-      throw new Error("Usage: status TASK-0001 backlog|in-progress|done");
+      throw new Error("Usage: status TASK-0001 backlog|in-progress|review|done");
     }
     const [identifier, status] = rest;
     const result = await updateTaskStatus(repoRoot, identifier, status);

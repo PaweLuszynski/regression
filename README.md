@@ -139,3 +139,26 @@ Supported current statuses are:
 npm test
 npm run lint
 ```
+
+## Local Task Workflow
+
+This repo also keeps a local Obsidian-compatible Kanban workflow under `projects/issues/` and `projects/boards/project-kanban.md`.
+
+Workflow states:
+
+- `backlog`
+- `in-progress`
+- `review`
+- `done`
+
+Use `review` for work that is implemented and has passed automated checks but is still waiting for user manual verification. Only move a task to `done` after the user has manually tested it or explicitly accepted it.
+
+Commands:
+
+```bash
+node scripts/task-workflow.js create --title "Task title"
+node scripts/task-workflow.js status TASK-0001 in-progress
+node scripts/task-workflow.js status TASK-0001 review
+node scripts/task-workflow.js status TASK-0001 done
+node scripts/task-workflow.js rebuild
+```
