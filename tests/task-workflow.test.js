@@ -76,6 +76,37 @@ tags:
     "utf8"
   );
 
+  await writeFile(
+    path.join(issuesDir, "TASK-0004-review-item.md"),
+    `---
+id: TASK-0004
+title: "Review item"
+status: review
+priority: medium
+type: task
+created: 2026-05-05T12:20:00.000Z
+updated: 2026-05-05T12:20:00.000Z
+tags:
+  - project
+---
+
+# Review item
+
+## Summary
+
+Ready for manual verification.
+
+## Acceptance Criteria
+
+- [ ]
+
+## Notes
+
+## Links
+`,
+    "utf8"
+  );
+
   const board = await rebuildBoard(repoRoot);
 
   assert.equal(
@@ -91,6 +122,10 @@ kanban-plugin: board
 ## In Progress
 
 - [ ] [[projects/issues/TASK-0003-in-progress-item|TASK-0003 In Progress item]]
+
+## Review
+
+- [ ] [[projects/issues/TASK-0004-review-item|TASK-0004 Review item]]
 
 ## Done
 
@@ -110,15 +145,78 @@ test("updateTaskStatus keeps the note in place, updates frontmatter, and rebuild
     now: "2026-05-05T12:00:00.000Z"
   });
 
-  await updateTaskStatus(repoRoot, created.task.id, "in-progress", {
+  await updateTaskStatus(repoRoot, created.task.id, "review", {
     now: "2026-05-05T13:30:00.000Z"
   });
 
   const note = await readFile(created.task.filePath, "utf8");
-  assert.match(note, /status: in-progress/);
+  assert.match(note, /status: review/);
   assert.match(note, /updated: 2026-05-05T13:30:00.000Z/);
+  assert.match(note, /# Finish docs/);
+  assert.match(note, /## Acceptance Criteria/);
 
   const board = await readFile(path.join(repoRoot, "projects/boards/project-kanban.md"), "utf8");
-  assert.match(board, /## In Progress\n\n- \[ \] \[\[projects\/issues\/TASK-0001-finish-docs\|TASK-0001 Finish docs\]\]/);
+  assert.match(board, /## Review\n\n- \[ \] \[\[projects\/issues\/TASK-0001-finish-docs\|TASK-0001 Finish docs\]\]/);
   assert.doesNotMatch(board, /## Backlog\n\n- \[ \] \[\[projects\/issues\/TASK-0001-finish-docs\|TASK-0001 Finish docs\]\]/);
+});
+
+test("updateTaskStatus preserves existing issue body content", async () => {
+  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "regression-task-workflow-"));
+  const created = await createTask(repoRoot, "Preserve body", {
+    now: "2026-05-05T12:00:00.000Z"
+  });
+
+  await writeFile(
+    created.task.filePath,
+    `---
+id: TASK-0001
+title: "Preserve body"
+status: backlog
+priority: should
+type: task
+created: 2026-05-05T12:00:00.000Z
+updated: 2026-05-05T12:00:00.000Z
+tags:
+  - project
+---
+
+# Preserve body
+
+## Summary
+
+Keep this note body.
+
+## Acceptance Criteria
+
+- [x] Body survives status changes.
+
+## Notes
+
+Do not replace this section.
+
+## Links
+`,
+    "utf8"
+  );
+
+  await updateTaskStatus(repoRoot, created.task.id, "in-progress", {
+    now: "2026-05-05T13:00:00.000Z"
+  });
+
+  const note = await readFile(created.task.filePath, "utf8");
+  assert.match(note, /status: in-progress/);
+  assert.match(note, /Keep this note body\./);
+  assert.match(note, /Do not replace this section\./);
+});
+
+test("updateTaskStatus rejects unsupported statuses", async () => {
+  const repoRoot = await mkdtemp(path.join(os.tmpdir(), "regression-task-workflow-"));
+  const created = await createTask(repoRoot, "Reject invalid status", {
+    now: "2026-05-05T12:00:00.000Z"
+  });
+
+  await assert.rejects(
+    () => updateTaskStatus(repoRoot, created.task.id, "qa-ready"),
+    /Unsupported status: qa-ready/
+  );
 });
