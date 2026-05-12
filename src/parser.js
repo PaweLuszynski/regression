@@ -1,7 +1,7 @@
 import path from "node:path";
 import zlib from "node:zlib";
 
-import { htmlToReadableText, parseSteps } from "../public/model.js";
+import { htmlToReadableText, normalizeRun, normalizeStepRows, parseSteps } from "../public/model.js";
 
 const XML_CONTENT_TYPES = new Set([0, 8]);
 
@@ -67,7 +67,7 @@ export async function parseTestRailRunFromBuffer(buffer, options = {}) {
   const importedAt = new Date().toISOString();
   const id = createRunStorageKey(runId, sourceFileName);
 
-  return {
+  return normalizeRun({
     id,
     sourceFileName,
     sheetName: selectedSheet.name,
@@ -76,7 +76,7 @@ export async function parseTestRailRunFromBuffer(buffer, options = {}) {
     importedAt,
     columns,
     cases
-  };
+  });
 }
 
 export function createRunStorageKey(runId, sourceFileName) {
@@ -130,7 +130,7 @@ function mapCaseRow(row, columns, index) {
     stepsStep,
     stepsExpectedResult,
     stepsStatus: clean(rawRow["Steps (Status)"]),
-    steps: parseSteps(rawRow),
+    steps: normalizeStepRows(parseSteps(rawRow, { availableStatuses: LOCAL_STATUSES }), LOCAL_STATUSES),
     testedBy: clean(rawRow["Tested By"]),
     testedOn: clean(rawRow["Tested On"]),
     testCaseLabels: clean(rawRow["Test Case Labels"]),

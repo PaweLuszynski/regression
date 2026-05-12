@@ -1,5 +1,6 @@
 import {
   appendNoteToCases,
+  applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
   buildTreeFromCases,
@@ -9,7 +10,9 @@ import {
   getNextSavedRunIdAfterDeletion,
   getStatusColor,
   getVisibleCaseOrder,
+  getRunStatuses,
   groupCasesBySection,
+  normalizeRun,
   panelDefaults,
   resizeCaseListColumns,
   resizePanelWidths,
@@ -33,16 +36,6 @@ const importAcceptByType = {
   json: ".json,application/json",
   csv: ".csv,text/csv"
 };
-const statusActions = [
-  ["Pass", "Passed"],
-  ["Fail", "Failed"],
-  ["Block", "Blocked"],
-  ["Retest", "Retest"],
-  ["In Test", "In test"],
-  ["Untested", "Untested"],
-  ["Conditionally Pass", "Conditionally Passed"]
-];
-
 const state = {
   run: null,
   selectedLocalId: null,
@@ -164,6 +157,23 @@ for (const [key, element] of [
 }
 
 loadSavedRuns();
+
+function availableStatuses() {
+  return state.run ? getRunStatuses(state.run) : statuses;
+}
+
+function statusActionsForRun() {
+  const labels = new Map([
+    ["Passed", "Pass"],
+    ["Failed", "Fail"],
+    ["Blocked", "Block"],
+    ["Retest", "Retest"],
+    ["In test", "In Test"],
+    ["Untested", "Untested"],
+    ["Conditionally Passed", "Conditionally Pass"]
+  ]);
+  return availableStatuses().map((status) => [labels.get(status) || status, status]);
+}
 
 function startImport(type) {
   state.pendingImportType = type;
@@ -407,10 +417,10 @@ async function deleteSavedRun(runId) {
 
 function setRun(run, options = {}) {
   const { run: nextRun, recoveryAction } = applyUnsavedRecovery(run, options);
-  state.run = nextRun;
-  state.selectedLocalId = nextRun.cases[0]?.localId || null;
+  state.run = normalizeRun(nextRun);
+  state.selectedLocalId = state.run.cases[0]?.localId || null;
   state.selectedCaseIds = new Set();
-  state.expandedFolders = collectFolderIds(buildTreeFromCases(nextRun.cases));
+  state.expandedFolders = collectFolderIds(buildTreeFromCases(state.run.cases, availableStatuses()));
   resetFilterOptions();
   render({ preserveScroll: true });
   renderSavedRuns();
@@ -461,7 +471,8 @@ function resetFilterOptions() {
     section: "",
     assignedTo: ""
   };
-  fillSelect(elements.currentStatusFilter, "Current Status", statuses);
+  fillSelect(elements.bulkStatusSelect, "Choose status", availableStatuses());
+  fillSelect(elements.currentStatusFilter, "Current Status", availableStatuses());
   fillSelect(elements.originalStatusFilter, "Original Status", uniqueValues("originalStatus"));
   fillSelect(elements.priorityFilter, "Priority", uniqueValues("priority"));
   fillSelect(elements.sectionFilter, "Section", uniqueValues("section"));
@@ -508,7 +519,8 @@ function render(options = {}) {
 
 function renderSummary(cases) {
   elements.summary.replaceChildren();
-  const stats = calculateRunStats(cases);
+  const runStatuses = availableStatuses();
+  const stats = calculateRunStats(cases, runStatuses);
   const progress = document.createElement("div");
   progress.className = "progress-panel";
 
@@ -530,7 +542,7 @@ function renderSummary(cases) {
   progress.append(donut, progressText);
   elements.summary.append(progress);
 
-  const items = [["Total", stats.total], ...statuses.map((status) => [status, stats.counts[status] || 0])];
+  const items = [["Total", stats.total], ...runStatuses.map((status) => [status, stats.counts[status] || 0])];
   for (const [label, count] of items) {
     const card = document.createElement("div");
     card.className = label === "Total" ? "summary-card" : `summary-card ${getStatusColor(label).className}`;
@@ -540,7 +552,7 @@ function renderSummary(cases) {
 }
 
 function renderTree(cases) {
-  const tree = buildTreeFromCases(cases);
+  const tree = buildTreeFromCases(cases, availableStatuses());
   elements.treeRoot.replaceChildren();
   const list = document.createElement("ul");
   list.className = "tree-list";
@@ -744,7 +756,7 @@ function renderBulkControls(visibleCases) {
 function stepsTable(testCase) {
   const rows = Array.isArray(testCase.steps) && testCase.steps.length > 0
     ? testCase.steps
-    : parseSteps(testCase.rawRow || {});
+    : parseSteps(testCase.rawRow || {}, { availableStatuses: availableStatuses() });
   const wrapper = document.createElement("section");
   wrapper.className = "detail-block steps-block";
   wrapper.append(textElement("h3", "Steps"));
@@ -756,7 +768,7 @@ function stepsTable(testCase) {
     return wrapper;
   }
 
-  const hasStepStatus = rows.some((row) => row.status);
+  const hasStepStatus = rows.some((row) => row.status || row.currentStatus);
   const hasExtras = rows.some((row) => row.additionalInfo || row.references);
   const scroll = document.createElement("div");
   scroll.className = "steps-scroll";
@@ -784,12 +796,12 @@ function stepsTable(testCase) {
   table.append(head);
 
   const body = document.createElement("tbody");
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     const tr = document.createElement("tr");
     tr.append(multilineCell(row.step), multilineCell(row.expectedResult));
     if (hasStepStatus) {
       const statusCell = document.createElement("td");
-      statusCell.append(row.status ? statusBadge(row.status) : textElement("span", ""));
+      statusCell.append(createStepStatusEditor(testCase, index, row));
       tr.append(statusCell);
     }
     if (hasExtras) {
@@ -818,7 +830,7 @@ function stepsTable(testCase) {
 
 function createStatusSelect(testCase) {
   const select = document.createElement("select");
-  for (const status of statuses) {
+  for (const status of availableStatuses()) {
     const option = document.createElement("option");
     option.value = status;
     option.textContent = status;
@@ -829,6 +841,36 @@ function createStatusSelect(testCase) {
     updateCaseStatus(testCase.localId, select.value);
   });
   return select;
+}
+
+function createStepStatusEditor(testCase, stepIndex, row) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "step-status-editor";
+
+  const select = document.createElement("select");
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "Choose status";
+  select.append(empty);
+  for (const status of availableStatuses()) {
+    const option = document.createElement("option");
+    option.value = status;
+    option.textContent = status;
+    select.append(option);
+  }
+  select.value = row.currentStatus || row.status || "";
+  select.title = `Step ${stepIndex + 1} status`;
+  select.setAttribute("aria-label", `Step ${stepIndex + 1} status`);
+  select.addEventListener("change", () => {
+    updateCaseStepStatus(testCase.localId, stepIndex, select.value);
+  });
+  wrapper.append(select);
+
+  if (row.status && row.currentStatus !== row.status) {
+    wrapper.append(textElement("span", `Imported: ${row.status}`, "step-status-original"));
+  }
+
+  return wrapper;
 }
 
 function resultActions(testCase) {
@@ -842,7 +884,7 @@ function resultActions(testCase) {
   passNext.addEventListener("click", () => updateCaseStatus(testCase.localId, "Passed", { advance: true }));
   wrapper.append(passNext);
 
-  for (const [label, status] of statusActions) {
+  for (const [label, status] of statusActionsForRun()) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = `result-button ${getStatusColor(status).className}`;
@@ -916,6 +958,22 @@ async function updateCase(localId, patch) {
   try {
     await saveProgress();
     showMessage("Progress saved locally.", "success");
+    await loadSavedRuns();
+  } catch (error) {
+    showMessage(error.message, "error");
+  }
+}
+
+async function updateCaseStepStatus(localId, stepIndex, status) {
+  const result = applyStepStatusToCase(state.run.cases, localId, stepIndex, status, new Date().toISOString());
+  if (result.changed === 0) {
+    showMessage("Selected step was not found.", "error");
+    return;
+  }
+  render({ preserveScroll: true });
+  try {
+    await saveProgress();
+    showMessage(`Updated step status to ${status || "blank"}.`, "success");
     await loadSavedRuns();
   } catch (error) {
     showMessage(error.message, "error");
@@ -1004,7 +1062,7 @@ async function saveProgress() {
     setSaveState("error", "Save failed. Changes are cached in this browser.");
     throw new Error(payload.error || "Could not save progress.");
   }
-  state.run = payload.run;
+  state.run = normalizeRun(payload.run);
   clearUnsavedRun(state.run.id);
   setSaveState("success", `Saved locally ${formatDateTime(state.run.savedAt || latestKnownUpdate(state.run))}`);
 }

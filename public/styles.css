@@ -1022,6 +1022,26 @@ pre {
   overflow-wrap: break-word;
 }
 
+.step-status-editor {
+  display: grid;
+  gap: 4px;
+}
+
+.step-status-editor select {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 8px 10px;
+}
+
+.step-status-original {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .steps-table .status-badge {
   white-space: nowrap;
 }

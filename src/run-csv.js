@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { normalizeRun } from "../public/model.js";
 import { createRunStorageKey, LOCAL_STATUSES } from "./parser.js";
 
 const REQUIRED_COLUMN_GROUPS = [
@@ -104,7 +105,7 @@ export function normalizeRestoredCsvRun(headers, dataRows, options = {}) {
     key: name
   }));
 
-  return {
+  return normalizeRun({
     id,
     sourceFileName,
     sheetName,
@@ -113,7 +114,7 @@ export function normalizeRestoredCsvRun(headers, dataRows, options = {}) {
     importedAt,
     columns,
     cases
-  };
+  });
 }
 
 function validateHeaders(headers) {

@@ -48,12 +48,108 @@ const statusColors = {
   Skipped: { className: "status-skipped", color: "#8a5a15", label: "Skipped" }
 };
 
+const preferredStatusOrder = [
+  "Failed",
+  "Blocked",
+  "In test",
+  "Retest",
+  "Untested",
+  "Conditionally Passed",
+  "Passed",
+  "Skipped"
+];
+
 export function getStatusColor(status) {
   return statusColors[status] || { className: "status-unknown", color: "#667085", label: status || "Unknown" };
 }
 
-export function calculateRunStats(cases) {
-  const counts = emptyStatusCounts();
+export function normalizeStatusValue(value, availableStatuses = statuses) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  return normalizeStatus(text, availableStatuses) || text;
+}
+
+export function normalizeStatusList(values, fallbackStatuses = statuses) {
+  const deduped = [];
+  const seen = new Set();
+  for (const value of values || []) {
+    const normalized = normalizeStatusValue(value, [...deduped, ...fallbackStatuses]);
+    if (!normalized) {
+      continue;
+    }
+    const key = normalized.toLowerCase();
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    deduped.push(normalized);
+  }
+  if (deduped.length > 0) {
+    return deduped;
+  }
+  return [...fallbackStatuses];
+}
+
+export function normalizeStepRows(stepRows, availableStatuses = statuses) {
+  return (Array.isArray(stepRows) ? stepRows : []).map((row) => {
+    const importedStatus = normalizeStatusValue(row?.status, availableStatuses);
+    const currentStatus = normalizeStatusValue(row?.currentStatus ?? importedStatus, availableStatuses);
+    return {
+      step: String(row?.step || ""),
+      expectedResult: String(row?.expectedResult || ""),
+      status: importedStatus,
+      currentStatus,
+      additionalInfo: String(row?.additionalInfo || ""),
+      references: String(row?.references || "")
+    };
+  }).filter((row) => row.step || row.expectedResult || row.status || row.currentStatus || row.additionalInfo || row.references);
+}
+
+export function collectCaseStatuses(cases) {
+  const collected = [];
+  for (const testCase of Array.isArray(cases) ? cases : []) {
+    collected.push(testCase?.originalStatus, testCase?.currentStatus, testCase?.rawRow?.Status, testCase?.stepsStatus);
+    for (const row of Array.isArray(testCase?.steps) ? testCase.steps : []) {
+      collected.push(row?.status, row?.currentStatus);
+    }
+  }
+  return normalizeStatusList(collected, []);
+}
+
+export function getRunStatuses(run) {
+  const explicit = normalizeStatusList(run?.availableStatuses, []);
+  if (explicit.length > 0) {
+    return explicit;
+  }
+  const derived = collectCaseStatuses(run?.cases);
+  return derived.length > 0 ? derived : [...statuses];
+}
+
+export function normalizeRun(run) {
+  if (!run || typeof run !== "object") {
+    return run;
+  }
+  const initialStatuses = normalizeStatusList([
+    ...(Array.isArray(run.availableStatuses) ? run.availableStatuses : []),
+    ...collectCaseStatuses(run.cases)
+  ]);
+  const initialCases = (Array.isArray(run.cases) ? run.cases : []).map((testCase) => normalizeRunCase(testCase, initialStatuses));
+  const availableStatuses = normalizeStatusList([
+    ...initialStatuses,
+    ...collectCaseStatuses(initialCases)
+  ]);
+  const cases = initialCases.map((testCase) => normalizeRunCase(testCase, availableStatuses));
+  return {
+    ...run,
+    availableStatuses,
+    cases
+  };
+}
+
+export function calculateRunStats(cases, availableStatuses = collectCaseStatuses(cases)) {
+  const counts = emptyStatusCounts(availableStatuses);
   for (const testCase of cases) {
     const status = testCase.currentStatus || "Untested";
     counts[status] = (counts[status] || 0) + 1;
@@ -209,6 +305,16 @@ export function applyStatusToCases(cases, localIds, status, updatedAt = new Date
   return { changed };
 }
 
+export function applyStepStatusToCase(cases, localId, stepIndex, status, updatedAt = new Date().toISOString()) {
+  const testCase = (Array.isArray(cases) ? cases : []).find((item) => item.localId === localId);
+  if (!testCase || !Array.isArray(testCase.steps) || !testCase.steps[stepIndex]) {
+    return { changed: 0 };
+  }
+  testCase.steps[stepIndex].currentStatus = status;
+  testCase.updatedAt = updatedAt;
+  return { changed: 1 };
+}
+
 export function getNextCaseId(currentCaseId, visibleCaseIds) {
   if (visibleCaseIds.length === 0) {
     return null;
@@ -259,7 +365,7 @@ export function appendNoteToCases(cases, localIds, note, updatedAt = new Date().
   return { changed };
 }
 
-export function buildTreeFromCases(cases) {
+export function buildTreeFromCases(cases, availableStatuses = collectCaseStatuses(cases)) {
   const root = createFolderNode("root", "All Tests");
   const folderMap = new Map([["root", root]]);
 
@@ -291,11 +397,12 @@ export function buildTreeFromCases(cases) {
     });
   }
 
-  updateFolderCounts(root);
+  updateFolderCounts(root, availableStatuses);
   return root;
 }
 
-export function parseSteps(rawRow) {
+export function parseSteps(rawRow, options = {}) {
+  const availableStatuses = normalizeStatusList(options.availableStatuses || options.statuses || statuses);
   const stepText = htmlToReadableText(rawRow["Steps (Step)"]);
   const expectedText = htmlToReadableText(rawRow["Steps (Expected Result)"]);
   const statusText = htmlToReadableText(rawRow["Steps (Status)"]);
@@ -306,7 +413,7 @@ export function parseSteps(rawRow) {
     return alignStepRows(
       splitNumberedItems(stepText),
       splitNumberedItems(expectedText),
-      splitStatusItems(statusText),
+      splitStatusItems(statusText, availableStatuses),
       splitNumberedItems(additionalText),
       splitNumberedItems(referencesText)
     );
@@ -385,7 +492,7 @@ function splitNumberedItems(value) {
   return text.split(/\n{2,}/).map((part) => part.trim()).filter(Boolean);
 }
 
-function splitStatusItems(value) {
+function splitStatusItems(value, availableStatuses = statuses) {
   const text = htmlToReadableText(value);
   if (!text) {
     return [];
@@ -396,18 +503,25 @@ function splitStatusItems(value) {
     return numbered;
   }
 
-  const statusPattern = statuses
+  const statusPattern = availableStatuses
     .slice()
     .sort((left, right) => right.length - left.length)
     .map(escapeRegExp)
     .join("|");
-  return [...text.matchAll(new RegExp(statusPattern, "gi"))]
-    .map((match) => normalizeStatus(match[0]))
+  if (!statusPattern) {
+    return text.split(/\n+/).map((part) => part.trim()).filter(Boolean);
+  }
+  const matches = [...text.matchAll(new RegExp(statusPattern, "gi"))]
+    .map((match) => normalizeStatus(match[0], availableStatuses))
     .filter(Boolean);
+  if (matches.length > 0) {
+    return matches;
+  }
+  return text.split(/\n+/).map((part) => part.trim()).filter(Boolean);
 }
 
-function normalizeStatus(value) {
-  return statuses.find((status) => status.toLowerCase() === String(value).toLowerCase()) || "";
+function normalizeStatus(value, availableStatuses = statuses) {
+  return availableStatuses.find((status) => status.toLowerCase() === String(value).toLowerCase()) || "";
 }
 
 function escapeRegExp(value) {
@@ -480,28 +594,30 @@ function createFolderNode(id, name) {
   };
 }
 
-function updateFolderCounts(node) {
-  node.counts = emptyStatusCounts();
+function updateFolderCounts(node, availableStatuses) {
+  node.counts = emptyStatusCounts(availableStatuses);
   for (const child of node.children) {
     if (child.type === "folder") {
-      updateFolderCounts(child);
+      updateFolderCounts(child, availableStatuses);
       addCounts(node.counts, child.counts);
     } else {
       node.counts[child.status] = (node.counts[child.status] || 0) + 1;
     }
   }
-  node.aggregateStatus = pickAggregateStatus(node.counts);
+  node.aggregateStatus = pickAggregateStatus(node.counts, availableStatuses);
 }
 
-function pickAggregateStatus(counts) {
-  if (counts.Failed) return "Failed";
-  if (counts.Blocked) return "Blocked";
-  if (counts["In test"]) return "In test";
-  if (counts.Retest) return "Retest";
-  if (counts.Untested) return "Untested";
-  if (counts["Conditionally Passed"]) return "Conditionally Passed";
-  if (counts.Passed) return "Passed";
-  return "Untested";
+function pickAggregateStatus(counts, availableStatuses = statuses) {
+  const preferred = normalizeStatusList([
+    ...preferredStatusOrder,
+    ...(Array.isArray(availableStatuses) ? availableStatuses : [])
+  ], []);
+  for (const status of preferred) {
+    if (counts[status]) {
+      return status;
+    }
+  }
+  return preferred[0] || "Untested";
 }
 
 function addCounts(target, source) {
@@ -510,8 +626,22 @@ function addCounts(target, source) {
   }
 }
 
-function emptyStatusCounts() {
-  return Object.fromEntries(statuses.map((status) => [status, 0]));
+function emptyStatusCounts(availableStatuses = statuses) {
+  return Object.fromEntries(normalizeStatusList(availableStatuses).map((status) => [status, 0]));
+}
+
+function normalizeRunCase(testCase, availableStatuses) {
+  const originalStatus = normalizeStatusValue(testCase?.originalStatus ?? testCase?.rawRow?.Status, availableStatuses);
+  const currentStatus = normalizeStatusValue(testCase?.currentStatus || originalStatus || "Untested", availableStatuses) || "Untested";
+  const parsedSteps = Array.isArray(testCase?.steps) && testCase.steps.length > 0
+    ? testCase.steps
+    : parseSteps(testCase?.rawRow || {}, { availableStatuses });
+  return {
+    ...testCase,
+    originalStatus,
+    currentStatus,
+    steps: normalizeStepRows(parsedSteps, availableStatuses)
+  };
 }
 
 function clampPanelWidth(value, panel) {

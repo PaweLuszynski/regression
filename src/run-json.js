@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import { normalizeRun, normalizeStepRows } from "../public/model.js";
 import { createRunStorageKey } from "./parser.js";
 
 export const JSON_PROGRESS_SCHEMA = "testrail-local-run-progress";
@@ -38,7 +39,7 @@ export function normalizeRestoredRun(payload) {
     cases: source.cases.map((testCase, index) => normalizeRestoredCase(testCase, index, importedAt))
   };
 
-  return run;
+  return normalizeRun(run);
 }
 
 function validateSchema(payload) {
@@ -72,7 +73,8 @@ function normalizeRestoredCase(testCase, index, importedAt) {
     localDefects: stringValue(testCase.localDefects),
     localEvidence: stringValue(testCase.localEvidence),
     updatedAt: stringValue(testCase.updatedAt || importedAt),
-    rawRow: testCase.rawRow
+    rawRow: testCase.rawRow,
+    steps: normalizeStepRows(testCase.steps)
   };
 }
 

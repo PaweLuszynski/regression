@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   appendNoteToCases,
+  applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
   buildTreeFromCases,
@@ -11,8 +12,10 @@ import {
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
+  getRunStatuses,
   getStatusColor,
   groupCasesBySection,
+  normalizeRun,
   resolveUnsavedRunRecovery,
   sortSavedRuns,
   resizeCaseListColumns,
@@ -63,13 +66,8 @@ test("buildTreeFromCases creates nested folders from section hierarchy", () => {
   assert.equal(tree.children[1].name, "Fallback Section");
   assert.deepEqual(tree.children[0].counts, {
     Passed: 1,
-    Untested: 0,
     Failed: 1,
-    "In test": 0,
-    Retest: 0,
-    Blocked: 0,
-    "Conditionally Passed": 0,
-    Skipped: 0
+    Untested: 0
   });
 });
 
@@ -82,6 +80,26 @@ test("getStatusColor returns readable semantic status classes", () => {
   assert.equal(getStatusColor("Blocked").className, "status-blocked");
   assert.equal(getStatusColor("Conditionally Passed").className, "status-conditionally-passed");
   assert.equal(getStatusColor("Unknown").className, "status-unknown");
+});
+
+test("getRunStatuses derives custom statuses from imported and local run data", () => {
+  const run = {
+    cases: [
+      {
+        originalStatus: "Ready For QA",
+        currentStatus: "Blocked By Vendor",
+        steps: [
+          { status: "Needs Review", currentStatus: "Needs Review" }
+        ]
+      }
+    ]
+  };
+
+  assert.deepEqual(getRunStatuses(run), [
+    "Ready For QA",
+    "Blocked By Vendor",
+    "Needs Review"
+  ]);
 });
 
 test("calculateRunStats uses current statuses and separates completed from passed", () => {
@@ -100,6 +118,16 @@ test("calculateRunStats uses current statuses and separates completed from passe
   assert.equal(stats.counts.Passed, 1);
   assert.equal(stats.counts.Untested, 1);
   assert.equal(stats.counts["Conditionally Passed"], 1);
+});
+
+test("calculateRunStats tracks custom imported statuses", () => {
+  const stats = calculateRunStats([
+    { currentStatus: "Ready For QA" },
+    { currentStatus: "Blocked By Vendor" }
+  ], ["Ready For QA", "Blocked By Vendor"]);
+
+  assert.equal(stats.counts["Ready For QA"], 1);
+  assert.equal(stats.counts["Blocked By Vendor"], 1);
 });
 
 test("parseSteps aligns numbered steps with numbered expected results", () => {
@@ -243,6 +271,21 @@ test("applyStatusToCases updates only selected cases", () => {
   assert.equal(cases[2].originalStatus, "Passed");
 });
 
+test("applyStepStatusToCase updates current step status without overwriting imported step status", () => {
+  const cases = [{
+    localId: "a",
+    updatedAt: "old",
+    steps: [{ status: "Untested", currentStatus: "Untested" }]
+  }];
+
+  const result = applyStepStatusToCase(cases, "a", 0, "Passed", "now");
+
+  assert.equal(result.changed, 1);
+  assert.equal(cases[0].steps[0].status, "Untested");
+  assert.equal(cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(cases[0].updatedAt, "now");
+});
+
 test("getNextCaseId returns the next visible id or null for the last case", () => {
   assert.equal(getNextCaseId("a", ["a", "b", "c"]), "b");
   assert.equal(getNextCaseId("c", ["a", "b", "c"]), null);
@@ -382,6 +425,26 @@ test("latestRunTimestamp returns most recent valid timestamp from run fields", (
   });
 
   assert.equal(timestamp, Date.parse("2026-05-06T12:00:00.000Z"));
+});
+
+test("normalizeRun materializes available statuses and editable step state", () => {
+  const run = normalizeRun({
+    id: "run",
+    cases: [{
+      localId: "T1",
+      originalStatus: "Ready For QA",
+      currentStatus: "Ready For QA",
+      rawRow: {
+        "Steps (Step)": "1. Open page",
+        "Steps (Expected Result)": "1. Page opens",
+        "Steps (Status)": "1. Needs Review"
+      }
+    }]
+  });
+
+  assert.deepEqual(run.availableStatuses, ["Ready For QA", "Needs Review"]);
+  assert.equal(run.cases[0].steps[0].status, "Needs Review");
+  assert.equal(run.cases[0].steps[0].currentStatus, "Needs Review");
 });
 
 test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {

@@ -203,6 +203,7 @@ test("parses TestRail rows while preserving duplicate headers and raw values", a
   assert.equal(run.sheetName, "Worksheet");
   assert.equal(run.runName, "Full regression Chrome 2.11v");
   assert.equal(run.runId, "R30");
+  assert.deepEqual(run.availableStatuses, ["Passed", "Untested"]);
   assert.deepEqual(run.columns.slice(0, 4).map((column) => column.key), [
     "ID",
     "Title",
@@ -232,6 +233,7 @@ test("parses TestRail rows while preserving duplicate headers and raw values", a
     step: "Submit credentials",
     expectedResult: "See dashboard",
     status: "Untested",
+    currentStatus: "Untested",
     additionalInfo: "",
     references: ""
   }]);
@@ -241,6 +243,47 @@ test("parses TestRail rows while preserving duplicate headers and raw values", a
   assert.equal(testCase.template, "Test Case (Steps)");
   assert.equal(testCase.rawRow.Steps, "duplicate one");
   assert.equal(testCase.rawRow.Steps__2, "Step Description: open login\\nExpected Result: form displays");
+});
+
+test("preserves custom imported statuses as the run-specific source of truth", async () => {
+  const workbook = createWorkbook([
+    headers,
+    [
+      "T9000",
+      "Custom workflow",
+      "",
+      "",
+      "QA User",
+      "C900",
+      "",
+      "",
+      "",
+      "",
+      "High",
+      "",
+      "Run",
+      "R90",
+      "Section",
+      "Plan > Section",
+      "Ready For QA",
+      "",
+      "Needs Review",
+      "1. Confirm result",
+      "Template",
+      "",
+      "",
+      "Functional"
+    ]
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "custom-statuses.xlsx"
+  });
+
+  assert.deepEqual(run.availableStatuses, ["Ready For QA", "Needs Review"]);
+  assert.equal(run.cases[0].currentStatus, "Ready For QA");
+  assert.equal(run.cases[0].steps[0].status, "Needs Review");
+  assert.equal(run.cases[0].steps[0].currentStatus, "Needs Review");
 });
 
 test("falls back to rich duplicate Steps when explicit step columns are empty", async () => {
