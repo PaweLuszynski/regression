@@ -44,6 +44,19 @@ This is not a TestRail API client.
 
 - Prevent overengineering and "AI slop" by strictly sticking to requested features. Keep the codebase clean, simple, and direct.
 - Every change must be done on a new branch.
+- Do not create branches with the `codex/` prefix.
+- Use task-based branch names instead:
+  - `feat/...` for new user-facing features
+  - `fix/...` for bug fixes
+  - `chore/...` for tooling, workflow, or repo maintenance
+  - `test/...` for test-only changes
+  - `docs/...` for documentation-only changes
+- Preferred examples:
+  - `feat/saved-runs-management`
+  - `fix/csv-import-restore`
+  - `chore/task-workflow-review-status`
+  - `test/import-export-roundtrip`
+  - `docs/update-kanban-workflow`
 - After a change is confirmed to work properly, it should be merged into `main`.
 
 ## XLSX parsing rules
