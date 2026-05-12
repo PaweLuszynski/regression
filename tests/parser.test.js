@@ -3,7 +3,7 @@ import { Buffer } from "node:buffer";
 import { test } from "node:test";
 import zlib from "node:zlib";
 
-import { parseTestRailRunFromBuffer } from "../src/parser.js";
+import { inspectWorkbookFromBuffer, parseTestRailRunFromBuffer } from "../src/parser.js";
 
 function dosDateTime() {
   const year = 2026 - 1980;
@@ -115,12 +115,23 @@ function escapeXml(value) {
     .replaceAll('"', "&quot;");
 }
 
-function createWorkbook(rows) {
-  return createZip([
+function createWorkbook(sheetConfigs) {
+  const sheets = Array.isArray(sheetConfigs?.[0])
+    ? [{ name: "Worksheet", rows: sheetConfigs }]
+    : sheetConfigs;
+  const overrides = sheets.map((sheet, index) => (
+    `<Override PartName="/xl/worksheets/sheet${index + 1}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>`
+  )).join("");
+  const workbookSheets = sheets.map((sheet, index) => (
+    `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`
+  )).join("");
+  const relationships = sheets.map((sheet, index) => (
+    `<Relationship Id="rId${index + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${index + 1}.xml"/>`
+  )).join("");
+  const entries = [
     ["[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8"?>
       <Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
-        <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>
-        <Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>
+        <Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>${overrides}
       </Types>`],
     ["_rels/.rels", `<?xml version="1.0" encoding="UTF-8"?>
       <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
@@ -128,14 +139,16 @@ function createWorkbook(rows) {
       </Relationships>`],
     ["xl/workbook.xml", `<?xml version="1.0" encoding="UTF-8"?>
       <workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
-        <sheets><sheet name="Worksheet" sheetId="1" r:id="rId1"/></sheets>
+        <sheets>${workbookSheets}</sheets>
       </workbook>`],
     ["xl/_rels/workbook.xml.rels", `<?xml version="1.0" encoding="UTF-8"?>
-      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
-        <Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>
-      </Relationships>`],
-    ["xl/worksheets/sheet1.xml", sheetXml(rows)]
-  ]);
+      <Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${relationships}
+      </Relationships>`]
+  ];
+  for (const [index, sheet] of sheets.entries()) {
+    entries.push([`xl/worksheets/sheet${index + 1}.xml`, sheetXml(sheet.rows)]);
+  }
+  return createZip(entries);
 }
 
 const headers = [
@@ -262,6 +275,65 @@ test("falls back to rich duplicate Steps when explicit step columns are empty", 
   assert.equal(run.cases[0].stepsExpectedResult, "");
 });
 
+test("inspects multi-sheet workbooks and requires explicit selection when multiple sheets are usable", async () => {
+  const workbook = createWorkbook([
+    { name: "Smoke", rows: [headers, ["T1", "Smoke case", "", "", "", "C1", "", "", "", "", "", "", "Smoke Run", "R1", "Section", "Plan > Smoke", "Untested", "", "", "", "", "", "", "Functional"]] },
+    { name: "Regression", rows: [headers, ["T2", "Regression case", "", "", "", "C2", "", "", "", "", "", "", "Regression Run", "R2", "Section", "Plan > Regression", "Passed", "", "Needs Review", "1. Confirm result", "", "", "", "Functional"]] }
+  ]);
+
+  const inspection = inspectWorkbookFromBuffer(workbook);
+  assert.deepEqual(inspection.usableSheets.map((sheet) => sheet.name), ["Smoke", "Regression"]);
+
+  await assert.rejects(
+    () => parseTestRailRunFromBuffer(workbook, { sourceFileName: "multi.xlsx" }),
+    /Multiple usable worksheets were found/
+  );
+});
+
+test("parses the explicitly selected worksheet from a multi-sheet workbook", async () => {
+  const workbook = createWorkbook([
+    { name: "Smoke", rows: [headers, ["T1", "Smoke case", "", "", "", "C1", "", "", "", "", "", "", "Smoke Run", "R1", "Section", "Plan > Smoke", "Untested", "", "", "", "", "", "", "Functional"]] },
+    { name: "Regression", rows: [headers, ["T2", "Regression case", "", "", "", "C2", "", "", "", "", "", "", "Regression Run", "R2", "Section", "Plan > Regression", "Ready For QA", "", "Needs Review", "1. Confirm result", "", "", "", "Functional"]] }
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "multi.xlsx",
+    sheetName: "Regression"
+  });
+
+  assert.equal(run.sheetName, "Regression");
+  assert.equal(run.runId, "R2");
+  assert.equal(run.cases[0].testId, "T2");
+});
+
+test("falls back to the single usable worksheet when other sheets are empty", async () => {
+  const workbook = createWorkbook([
+    { name: "Summary", rows: [[""], [""]] },
+    { name: "Worksheet", rows: [headers, ["T3", "Only usable case", "", "", "", "C3", "", "", "", "", "", "", "Run", "R3", "Section", "Plan > Main", "Untested", "", "", "", "", "", "", "Functional"]] }
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "single-usable.xlsx"
+  });
+
+  assert.equal(run.sheetName, "Worksheet");
+  assert.equal(run.cases[0].testId, "T3");
+});
+
+test("rejects missing selected worksheets with a clear error", async () => {
+  const workbook = createWorkbook([
+    { name: "Worksheet", rows: [headers, ["T4", "Case", "", "", "", "C4", "", "", "", "", "", "", "Run", "R4", "Section", "Plan > Main", "Untested", "", "", "", "", "", "", "Functional"]] }
+  ]);
+
+  await assert.rejects(
+    () => parseTestRailRunFromBuffer(workbook, {
+      sourceFileName: "missing-sheet.xlsx",
+      sheetName: "NotHere"
+    }),
+    /Selected worksheet 'NotHere' was not found/
+  );
+});
+
 test("rejects invalid workbooks with useful errors", async () => {
   await assert.rejects(
     () => parseTestRailRunFromBuffer(Buffer.from("not an xlsx"), { sourceFileName: "bad.xlsx" }),
@@ -270,13 +342,13 @@ test("rejects invalid workbooks with useful errors", async () => {
 });
 
 test("rejects sheets without headers or rows", async () => {
-  const emptyWorkbook = createWorkbook([]);
+  const emptyWorkbook = createWorkbook([{ name: "Worksheet", rows: [] }]);
   await assert.rejects(
     () => parseTestRailRunFromBuffer(emptyWorkbook, { sourceFileName: "empty.xlsx" }),
     /No headers were detected/
   );
 
-  const headerOnlyWorkbook = createWorkbook([headers]);
+  const headerOnlyWorkbook = createWorkbook([{ name: "Worksheet", rows: [headers] }]);
   await assert.rejects(
     () => parseTestRailRunFromBuffer(headerOnlyWorkbook, { sourceFileName: "header-only.xlsx" }),
     /No test rows were detected/

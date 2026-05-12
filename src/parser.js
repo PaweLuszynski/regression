@@ -20,36 +20,15 @@ export const LOCAL_STATUSES = [
   "Skipped"
 ];
 
+export function inspectWorkbookFromBuffer(buffer) {
+  return inspectWorkbookFromBufferFromWorkbook(loadWorkbook(buffer));
+}
+
 export async function parseTestRailRunFromBuffer(buffer, options = {}) {
   const sourceFileName = options.sourceFileName || "import.xlsx";
-  let files;
-  try {
-    files = readZipEntries(Buffer.from(buffer));
-  } catch (error) {
-    throw new Error(`Invalid XLSX file: ${error.message}`);
-  }
-
-  const workbookXml = getTextFile(files, "xl/workbook.xml");
-  if (!workbookXml) {
-    throw new Error("Invalid XLSX file: workbook.xml was not found.");
-  }
-
-  const workbookRels = parseRelationships(getTextFile(files, "xl/_rels/workbook.xml.rels") || "");
-  const sheets = parseWorkbookSheets(workbookXml);
-  const selectedSheet = sheets.find((sheet) => sheet.name === "Worksheet") || sheets[0];
-  if (!selectedSheet) {
-    throw new Error("Invalid XLSX file: no worksheets were found.");
-  }
-
-  const sheetTarget = workbookRels.get(selectedSheet.relationshipId) || `worksheets/sheet${selectedSheet.sheetId}.xml`;
-  const sheetPath = normalizeZipPath(path.posix.join("xl", sheetTarget));
-  const worksheetXml = getTextFile(files, sheetPath);
-  if (!worksheetXml) {
-    throw new Error(`Invalid XLSX file: worksheet '${selectedSheet.name}' was not found.`);
-  }
-
-  const sharedStrings = parseSharedStrings(getTextFile(files, "xl/sharedStrings.xml") || "");
-  const rows = parseWorksheetRows(worksheetXml, sharedStrings);
+  const workbook = loadWorkbook(buffer);
+  const selectedSheet = chooseImportSheet(workbook, options.sheetName);
+  const rows = readWorksheetRowsForSheet(workbook, selectedSheet);
   if (rows.length === 0 || rows[0].every((value) => value.trim() === "")) {
     throw new Error("No headers were detected in the selected worksheet.");
   }
@@ -76,6 +55,76 @@ export async function parseTestRailRunFromBuffer(buffer, options = {}) {
     importedAt,
     columns,
     cases
+  };
+}
+
+function loadWorkbook(buffer) {
+  let files;
+  try {
+    files = readZipEntries(Buffer.from(buffer));
+  } catch (error) {
+    throw new Error(`Invalid XLSX file: ${error.message}`);
+  }
+
+  const workbookXml = getTextFile(files, "xl/workbook.xml");
+  if (!workbookXml) {
+    throw new Error("Invalid XLSX file: workbook.xml was not found.");
+  }
+
+  const workbookRels = parseRelationships(getTextFile(files, "xl/_rels/workbook.xml.rels") || "");
+  const sheets = parseWorkbookSheets(workbookXml);
+  if (sheets.length === 0) {
+    throw new Error("Invalid XLSX file: no worksheets were found.");
+  }
+
+  return {
+    files,
+    workbookRels,
+    sheets,
+    sharedStrings: parseSharedStrings(getTextFile(files, "xl/sharedStrings.xml") || "")
+  };
+}
+
+function chooseImportSheet(workbook, requestedSheetName) {
+  if (requestedSheetName) {
+    const exactMatch = workbook.sheets.find((sheet) => sheet.name === requestedSheetName);
+    if (!exactMatch) {
+      const names = workbook.sheets.map((sheet) => sheet.name).filter(Boolean).join(", ");
+      throw new Error(`Selected worksheet '${requestedSheetName}' was not found. Available worksheets: ${names || "none"}.`);
+    }
+    return exactMatch;
+  }
+
+  const inspection = inspectWorkbookFromBufferFromWorkbook(workbook);
+  if (inspection.usableSheets.length > 1) {
+    const error = new Error("Multiple usable worksheets were found. Choose one worksheet to import.");
+    error.code = "WORKSHEET_SELECTION_REQUIRED";
+    error.availableSheets = inspection.usableSheets.map((sheet) => sheet.name);
+    throw error;
+  }
+  if (inspection.usableSheets.length === 1) {
+    return workbook.sheets.find((sheet) => sheet.name === inspection.usableSheets[0].name) || workbook.sheets[0];
+  }
+  return workbook.sheets.find((sheet) => sheet.name === "Worksheet") || workbook.sheets[0];
+}
+
+function inspectWorkbookFromBufferFromWorkbook(workbook) {
+  const sheets = workbook.sheets.map((sheet) => {
+    const rows = readWorksheetRowsForSheet(workbook, sheet);
+    const hasHeaders = rows.length > 0 && rows[0].some((value) => value.trim() !== "");
+    const hasData = rows.length >= 2 && rows.slice(1).some((row) => row.some((value) => value.trim() !== ""));
+    return {
+      name: sheet.name,
+      sheetId: sheet.sheetId,
+      hasHeaders,
+      hasData,
+      isUsable: hasHeaders && hasData
+    };
+  });
+
+  return {
+    sheets,
+    usableSheets: sheets.filter((sheet) => sheet.isUsable)
   };
 }
 
@@ -236,6 +285,16 @@ function parseRelationships(xml) {
     }
   }
   return relationships;
+}
+
+function readWorksheetRowsForSheet(workbook, sheet) {
+  const sheetTarget = workbook.workbookRels.get(sheet.relationshipId) || `worksheets/sheet${sheet.sheetId}.xml`;
+  const sheetPath = normalizeZipPath(path.posix.join("xl", sheetTarget));
+  const worksheetXml = getTextFile(workbook.files, sheetPath);
+  if (!worksheetXml) {
+    throw new Error(`Invalid XLSX file: worksheet '${sheet.name}' was not found.`);
+  }
+  return parseWorksheetRows(worksheetXml, workbook.sharedStrings);
 }
 
 function parseSharedStrings(xml) {

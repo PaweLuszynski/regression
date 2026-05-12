@@ -202,25 +202,87 @@ async function importFromFile(event) {
   }
 }
 
-async function importXlsxRun(file) {
+async function importXlsxRun(file, options = {}) {
   showMessage("Importing selected XLSX...", "info");
   const response = await fetch("/api/import", {
     method: "POST",
     headers: {
       "content-type": "application/octet-stream",
-      "x-file-name": encodeURIComponent(file.name)
+      "x-file-name": encodeURIComponent(file.name),
+      ...(options.sheetName ? { "x-import-sheet-name": encodeURIComponent(options.sheetName) } : {}),
+      ...(options.existingAction ? { "x-import-existing-action": encodeURIComponent(options.existingAction) } : {})
     },
     body: await file.arrayBuffer()
   });
   const payload = await response.json();
+  if (response.status === 409 && payload.worksheetSelectionRequired) {
+    const selectedSheet = promptForWorksheet(payload.availableSheets || []);
+    if (!selectedSheet) {
+      showMessage("Import cancelled before worksheet selection.", "warning");
+      return;
+    }
+    await importXlsxRun(file, { ...options, sheetName: selectedSheet });
+    return;
+  }
+  if (response.status === 409 && payload.decisionRequired && payload.reason === "existing-progress") {
+    const action = promptForExistingProgressAction(payload);
+    if (!action) {
+      showMessage("Import cancelled.", "warning");
+      return;
+    }
+    if (action === "replace" && !confirm("Replace saved local progress with this import? This keeps source files untouched but overwrites the saved local run snapshot.")) {
+      showMessage("Replace cancelled.", "warning");
+      return;
+    }
+    await importXlsxRun(file, { ...options, existingAction: action });
+    return;
+  }
   if (!response.ok) {
     throw new Error(payload.error || "Import failed.");
   }
-  const recoveryAction = setRun(payload.run);
+  if (payload.existingProgressReplaced && payload.run?.id) {
+    clearUnsavedRun(payload.run.id);
+  }
+  const recoveryAction = setRun(payload.run, { skipRecovery: Boolean(payload.existingProgressReplaced) });
   if (recoveryAction === "none") {
     showMessage(payload.message, payload.existingProgressFound ? "warning" : "success");
   }
   await loadSavedRuns();
+}
+
+function promptForWorksheet(availableSheets) {
+  const options = (Array.isArray(availableSheets) ? availableSheets : []).filter(Boolean);
+  if (options.length === 0) {
+    return "";
+  }
+  if (options.length === 1) {
+    return options[0];
+  }
+  const choice = window.prompt(
+    `Multiple usable worksheets were found:\n${options.map((name, index) => `${index + 1}. ${name}`).join("\n")}\n\nType the exact worksheet name to import:`,
+    options[0]
+  );
+  if (!choice) {
+    return "";
+  }
+  return options.find((name) => name === choice.trim()) || "";
+}
+
+function promptForExistingProgressAction(payload) {
+  const summary = payload.importedRunSummary || {};
+  const choice = window.prompt(
+    `${payload.message}\n\nRun: ${summary.runName || summary.id || "Imported run"}\nWorksheet: ${summary.sheetName || "Unknown"}\n\nType RESUME to keep saved local progress or REPLACE to overwrite it with this import:`,
+    "RESUME"
+  );
+  if (!choice) {
+    return "";
+  }
+  const normalized = choice.trim().toLowerCase();
+  if (normalized === "resume" || normalized === "replace") {
+    return normalized;
+  }
+  showMessage("Import choice must be RESUME or REPLACE.", "warning");
+  return "";
 }
 
 async function importJsonRun(file) {
