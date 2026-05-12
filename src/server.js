@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { parseTestRailRunFromBuffer } from "./parser.js";
 import { parseRunProgressCsv } from "./run-csv.js";
@@ -18,10 +18,10 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.resolve(__dirname, "..");
-const publicDir = path.join(rootDir, "public");
-const progressDir = process.env.PROGRESS_DIR || path.join(rootDir, "data", "progress");
-const host = "127.0.0.1";
-const port = Number(process.env.PORT || 4173);
+const defaultPublicDir = path.join(rootDir, "public");
+const defaultProgressDir = process.env.PROGRESS_DIR || path.join(rootDir, "data", "progress");
+const defaultHost = "127.0.0.1";
+const defaultPort = Number(process.env.PORT || 4173);
 
 const mimeTypes = {
   ".html": "text/html; charset=utf-8",
@@ -30,20 +30,37 @@ const mimeTypes = {
   ".json": "application/json; charset=utf-8"
 };
 
-const server = http.createServer(async (request, response) => {
-  try {
-    await route(request, response);
-  } catch (error) {
-    sendJson(response, 500, { error: error.message || "Unexpected server error." });
-  }
-});
+export function createServer(options = {}) {
+  const context = {
+    publicDir: options.publicDir || defaultPublicDir,
+    progressDir: options.progressDir || defaultProgressDir,
+    host: options.host || defaultHost,
+    port: Number(options.port || defaultPort)
+  };
 
-server.listen(port, host, () => {
-  console.log(`TestRail local run viewer: http://${host}:${port}`);
-  console.log(`Progress directory: ${progressDir}`);
-});
+  return http.createServer(async (request, response) => {
+    try {
+      await route(request, response, context);
+    } catch (error) {
+      sendJson(response, 500, { error: error.message || "Unexpected server error." });
+    }
+  });
+}
 
-async function route(request, response) {
+export function startServer(options = {}) {
+  const server = createServer(options);
+  const host = options.host || defaultHost;
+  const port = Number(options.port || defaultPort);
+  const progressDir = options.progressDir || defaultProgressDir;
+  server.listen(port, host, () => {
+    console.log(`TestRail local run viewer: http://${host}:${port}`);
+    console.log(`Progress directory: ${progressDir}`);
+  });
+  return server;
+}
+
+async function route(request, response, context) {
+  const { host, port, progressDir, publicDir } = context;
   const url = new URL(request.url || "/", `http://${host}:${port}`);
   const pathname = normalizePathname(url.pathname);
 
@@ -60,7 +77,7 @@ async function route(request, response) {
     const sourceFileName = decodeURIComponent(request.headers["x-file-name"] || "import.xlsx");
     const buffer = await readRequestBody(request);
     const importedRun = await parseTestRailRunFromBuffer(buffer, { sourceFileName });
-    const existingRun = await readSavedRun(importedRun.id);
+    const existingRun = await readSavedRun(progressDir, importedRun.id);
     if (existingRun) {
       return sendJson(response, 200, {
         run: existingRun,
@@ -69,7 +86,7 @@ async function route(request, response) {
       });
     }
 
-    await saveRun(importedRun);
+    await saveRun(progressDir, importedRun);
     return sendJson(response, 201, {
       run: importedRun,
       existingProgressFound: false,
@@ -85,7 +102,7 @@ async function route(request, response) {
       return sendJson(response, 400, { error: error.message || "Invalid JSON progress file." });
     }
 
-    await saveRun(restoredRun);
+    await saveRun(progressDir, restoredRun);
     return sendJson(response, 201, {
       run: restoredRun,
       message: "JSON progress restored and saved locally."
@@ -102,7 +119,7 @@ async function route(request, response) {
       return sendJson(response, 400, { error: error.message || "Invalid CSV progress file." });
     }
 
-    await saveRun(restoredRun);
+    await saveRun(progressDir, restoredRun);
     return sendJson(response, 201, {
       run: restoredRun,
       message: "CSV progress restored and saved locally."
@@ -111,7 +128,7 @@ async function route(request, response) {
 
   const runMatch = pathname.match(/^\/api\/runs\/([^/]+)$/);
   if (runMatch && request.method === "GET") {
-    const run = await readSavedRun(runMatch[1]);
+    const run = await readSavedRun(progressDir, runMatch[1]);
     if (!run) {
       return sendJson(response, 404, { error: "Saved run was not found." });
     }
@@ -132,7 +149,7 @@ async function route(request, response) {
     if (!run || run.id !== runMatch[1] || !Array.isArray(run.cases)) {
       return sendJson(response, 400, { error: "Invalid run payload." });
     }
-    await saveRun(run);
+    await saveRun(progressDir, run);
     return sendJson(response, 200, { run, message: "Progress saved." });
   }
 
@@ -150,7 +167,7 @@ async function route(request, response) {
 
   const exportMatch = pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
   if (exportMatch && request.method === "GET") {
-    const run = await readSavedRun(exportMatch[1]);
+    const run = await readSavedRun(progressDir, exportMatch[1]);
     if (!run) {
       return sendJson(response, 404, { error: "Saved run was not found." });
     }
@@ -164,13 +181,13 @@ async function route(request, response) {
   }
 
   if (request.method === "GET") {
-    return serveStatic(pathname, response);
+    return serveStatic(pathname, response, publicDir);
   }
 
   sendJson(response, 405, { error: "Method not allowed." });
 }
 
-async function serveStatic(pathname, response) {
+async function serveStatic(pathname, response, publicDir) {
   const requestedPath = pathname === "/" ? "/index.html" : pathname;
   const resolvedPath = path.resolve(publicDir, `.${requestedPath}`);
   if (!resolvedPath.startsWith(publicDir)) {
@@ -192,11 +209,11 @@ async function serveStatic(pathname, response) {
   }
 }
 
-async function readSavedRun(id) {
+async function readSavedRun(progressDir, id) {
   return readSavedRunFromDir(progressDir, id);
 }
 
-async function saveRun(run) {
+async function saveRun(progressDir, run) {
   const cleanRun = {
     ...run,
     savedAt: new Date().toISOString()
@@ -225,4 +242,10 @@ function sendJson(response, statusCode, payload) {
     "x-content-type-options": "nosniff"
   });
   response.end(text);
+}
+
+const isDirectRun = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+
+if (isDirectRun) {
+  startServer();
 }
