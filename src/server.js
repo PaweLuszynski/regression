@@ -3,7 +3,7 @@ import http from "node:http";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { inspectWorkbookFromBuffer, parseTestRailRunFromBuffer } from "./parser.js";
+import { createLegacyRunStorageKey, inspectWorkbookFromBuffer, parseTestRailRunFromBuffer } from "./parser.js";
 import { parseRunProgressCsv } from "./run-csv.js";
 import { parseRunProgressJson } from "./run-json.js";
 import {
@@ -110,8 +110,8 @@ async function route(request, response, context) {
       return sendJson(response, 400, { error: error.message || "Import failed." });
     }
 
-    const existingRun = await readSavedRun(progressDir, importedRun.id);
-    if (existingRun && !existingAction) {
+    const existingSavedRun = await findExistingImportedRun(progressDir, importedRun, sourceFileName);
+    if (existingSavedRun && !existingAction) {
       return sendJson(response, 409, {
         decisionRequired: true,
         existingProgressFound: true,
@@ -121,20 +121,23 @@ async function route(request, response, context) {
       });
     }
 
-    if (existingRun && existingAction === "resume") {
+    if (existingSavedRun && existingAction === "resume") {
       return sendJson(response, 200, {
-        run: existingRun,
+        run: existingSavedRun.run,
         existingProgressFound: true,
         message: "Existing local progress was kept and loaded."
       });
     }
 
     await saveRun(progressDir, importedRun);
-    return sendJson(response, existingRun ? 200 : 201, {
+    if (existingSavedRun && existingSavedRun.id !== importedRun.id) {
+      await deleteSavedRunFromDir(progressDir, existingSavedRun.id);
+    }
+    return sendJson(response, existingSavedRun ? 200 : 201, {
       run: importedRun,
       existingProgressFound: false,
-      existingProgressReplaced: Boolean(existingRun),
-      message: existingRun
+      existingProgressReplaced: Boolean(existingSavedRun),
+      message: existingSavedRun
         ? "Imported run replaced the previous saved local progress."
         : "Imported run saved locally."
     });
@@ -265,6 +268,35 @@ async function saveRun(progressDir, run) {
     savedAt: new Date().toISOString()
   };
   await writeRunAtomically(progressDir, run.id, cleanRun);
+}
+
+async function findExistingImportedRun(progressDir, importedRun, sourceFileName) {
+  const candidateIds = [
+    importedRun?.id,
+    createLegacyRunStorageKey(importedRun?.runId, sourceFileName)
+  ].filter(Boolean);
+
+  for (const runId of new Set(candidateIds)) {
+    const run = await readSavedRun(progressDir, runId);
+    if (run) {
+      return { id: runId, run };
+    }
+  }
+
+  const savedRuns = await listSavedRunsFromDir(progressDir);
+  const matchingSummary = savedRuns.find((summary) => {
+    if (importedRun?.runId && summary.runId) {
+      return summary.runId === importedRun.runId && summary.sheetName === importedRun.sheetName;
+    }
+    return summary.runName === importedRun?.runName && summary.sheetName === importedRun?.sheetName;
+  });
+  if (matchingSummary?.id) {
+    const run = await readSavedRun(progressDir, matchingSummary.id);
+    if (run) {
+      return { id: matchingSummary.id, run };
+    }
+  }
+  return null;
 }
 
 async function readRequestBody(request) {

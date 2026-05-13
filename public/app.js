@@ -46,6 +46,7 @@ const state = {
   activeResize: null,
   activeColumnResize: null,
   pendingImportType: "",
+  pendingImportPrompt: null,
   pendingRecoveredRun: null,
   savedRuns: [],
   savedRunsCollapsed: loadSavedRunsCollapsed(),
@@ -73,6 +74,7 @@ const elements = {
   recoverUnsavedButton: document.querySelector("#recoverUnsavedButton"),
   discardUnsavedButton: document.querySelector("#discardUnsavedButton"),
   message: document.querySelector("#message"),
+  importPrompt: document.querySelector("#importPrompt"),
   savedRunsSummary: document.querySelector("#savedRunsSummary"),
   savedRuns: document.querySelector("#savedRuns"),
   savedRunsPanel: document.querySelector("#savedRunsPanel"),
@@ -141,6 +143,7 @@ applyCaseListColumns();
 fillSelect(elements.bulkStatusSelect, "Choose status", statuses);
 elements.savedRunsSortSelect.value = state.savedRunsSort;
 applySavedRunsSectionState();
+renderImportPrompt();
 
 for (const [key, element] of [
   ["search", elements.searchInput],
@@ -176,6 +179,7 @@ function statusActionsForRun() {
 }
 
 function startImport(type) {
+  clearImportPrompt();
   state.pendingImportType = type;
   elements.importFileInput.accept = importAcceptByType[type] || "";
   elements.importFileInput.click();
@@ -226,30 +230,34 @@ async function importXlsxRun(file, options = {}) {
   });
   const payload = await response.json();
   if (response.status === 409 && payload.worksheetSelectionRequired) {
-    const selectedSheet = promptForWorksheet(payload.availableSheets || []);
-    if (!selectedSheet) {
-      showMessage("Import cancelled before worksheet selection.", "warning");
-      return;
-    }
-    await importXlsxRun(file, { ...options, sheetName: selectedSheet });
+    setImportPrompt({
+      type: "worksheet-selection",
+      file,
+      options,
+      availableSheets: payload.availableSheets || [],
+      selectedSheet: payload.availableSheets?.[0] || "",
+      message: payload.message || "Choose one worksheet to import."
+    });
+    showMessage(payload.message || "Choose one worksheet to import.", "warning");
     return;
   }
   if (response.status === 409 && payload.decisionRequired && payload.reason === "existing-progress") {
-    const action = promptForExistingProgressAction(payload);
-    if (!action) {
-      showMessage("Import cancelled.", "warning");
-      return;
-    }
-    if (action === "replace" && !confirm("Replace saved local progress with this import? This keeps source files untouched but overwrites the saved local run snapshot.")) {
-      showMessage("Replace cancelled.", "warning");
-      return;
-    }
-    await importXlsxRun(file, { ...options, existingAction: action });
+    setImportPrompt({
+      type: "existing-progress",
+      file,
+      options,
+      importedRunSummary: payload.importedRunSummary || {},
+      message: payload.message || "Saved local progress already exists for this run.",
+      confirmReplace: false
+    });
+    showMessage(payload.message || "Choose whether to resume or replace saved local progress.", "warning");
     return;
   }
   if (!response.ok) {
+    clearImportPrompt();
     throw new Error(payload.error || "Import failed.");
   }
+  clearImportPrompt();
   if (payload.existingProgressReplaced && payload.run?.id) {
     clearUnsavedRun(payload.run.id);
   }
@@ -260,42 +268,8 @@ async function importXlsxRun(file, options = {}) {
   await loadSavedRuns();
 }
 
-function promptForWorksheet(availableSheets) {
-  const options = (Array.isArray(availableSheets) ? availableSheets : []).filter(Boolean);
-  if (options.length === 0) {
-    return "";
-  }
-  if (options.length === 1) {
-    return options[0];
-  }
-  const choice = window.prompt(
-    `Multiple usable worksheets were found:\n${options.map((name, index) => `${index + 1}. ${name}`).join("\n")}\n\nType the exact worksheet name to import:`,
-    options[0]
-  );
-  if (!choice) {
-    return "";
-  }
-  return options.find((name) => name === choice.trim()) || "";
-}
-
-function promptForExistingProgressAction(payload) {
-  const summary = payload.importedRunSummary || {};
-  const choice = window.prompt(
-    `${payload.message}\n\nRun: ${summary.runName || summary.id || "Imported run"}\nWorksheet: ${summary.sheetName || "Unknown"}\n\nType RESUME to keep saved local progress or REPLACE to overwrite it with this import:`,
-    "RESUME"
-  );
-  if (!choice) {
-    return "";
-  }
-  const normalized = choice.trim().toLowerCase();
-  if (normalized === "resume" || normalized === "replace") {
-    return normalized;
-  }
-  showMessage("Import choice must be RESUME or REPLACE.", "warning");
-  return "";
-}
-
 async function importJsonRun(file) {
+  clearImportPrompt();
   if (state.run && !confirm("Restore JSON progress and replace the currently loaded run?")) {
     return;
   }
@@ -317,6 +291,7 @@ async function importJsonRun(file) {
 }
 
 async function importCsvRun(file) {
+  clearImportPrompt();
   if (state.run && !confirm("Restore CSV progress and replace the currently loaded run?")) {
     return;
   }
@@ -338,6 +313,188 @@ async function importCsvRun(file) {
     showMessage(payload.message, "success");
   }
   await loadSavedRuns();
+}
+
+function setImportPrompt(prompt) {
+  state.pendingImportPrompt = prompt;
+  renderImportPrompt();
+}
+
+function clearImportPrompt() {
+  if (!state.pendingImportPrompt) {
+    return;
+  }
+  state.pendingImportPrompt = null;
+  renderImportPrompt();
+}
+
+function renderImportPrompt() {
+  const prompt = state.pendingImportPrompt;
+  elements.importPrompt.replaceChildren();
+  elements.importPrompt.hidden = !prompt;
+  if (!prompt) {
+    return;
+  }
+
+  const header = document.createElement("div");
+  header.className = "import-prompt-header";
+  const copy = document.createElement("div");
+  copy.className = "import-prompt-copy";
+  copy.append(
+    textElement("h2", prompt.type === "worksheet-selection" ? "Choose worksheet to import" : "Saved local progress already exists"),
+    textElement("p", prompt.message || "")
+  );
+  header.append(copy);
+  elements.importPrompt.append(header);
+
+  if (prompt.type === "worksheet-selection") {
+    elements.importPrompt.append(renderWorksheetSelectionPrompt(prompt));
+    return;
+  }
+
+  elements.importPrompt.append(renderExistingProgressPrompt(prompt));
+}
+
+function renderWorksheetSelectionPrompt(prompt) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "import-prompt-copy";
+  const field = document.createElement("label");
+  field.className = "import-prompt-field";
+  field.append(textElement("span", "Worksheet"));
+  const select = document.createElement("select");
+  for (const sheetName of prompt.availableSheets || []) {
+    const option = document.createElement("option");
+    option.value = sheetName;
+    option.textContent = sheetName;
+    option.selected = sheetName === (prompt.selectedSheet || prompt.availableSheets?.[0] || "");
+    select.append(option);
+  }
+  select.addEventListener("change", () => {
+    if (!state.pendingImportPrompt || state.pendingImportPrompt.type !== "worksheet-selection") {
+      return;
+    }
+    state.pendingImportPrompt.selectedSheet = select.value;
+  });
+  field.append(select);
+  wrapper.append(field);
+
+  const actions = document.createElement("div");
+  actions.className = "import-prompt-actions";
+  const continueButton = document.createElement("button");
+  continueButton.type = "button";
+  continueButton.className = "button-primary";
+  continueButton.textContent = "Import selected worksheet";
+  continueButton.addEventListener("click", continueImportWithSelectedWorksheet);
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", cancelPendingImportPrompt);
+  actions.append(continueButton, cancelButton);
+  wrapper.append(actions);
+  return wrapper;
+}
+
+function renderExistingProgressPrompt(prompt) {
+  const wrapper = document.createElement("div");
+  wrapper.className = "import-prompt-copy";
+  const summary = prompt.importedRunSummary || {};
+  const summaryList = document.createElement("dl");
+  summaryList.className = "import-prompt-summary";
+  for (const [label, value] of [
+    ["Run", summary.runName || summary.id || "Imported run"],
+    ["Run ID", summary.runId || "Unknown"],
+    ["Worksheet", summary.sheetName || "Unknown"],
+    ["Cases", summary.caseCount || 0]
+  ]) {
+    summaryList.append(textElement("dt", label), textElement("dd", String(value)));
+  }
+  wrapper.append(summaryList);
+  wrapper.append(textElement("p", "Resume keeps your saved local statuses, notes, defects, evidence, and step progress. Replace discards saved local progress for this run and uses the newly imported workbook state."));
+
+  if (prompt.confirmReplace) {
+    wrapper.append(textElement("div", "Confirm replace: this will overwrite the saved local run snapshot for this run only. Source XLSX files are not deleted.", "import-prompt-confirm"));
+  }
+
+  const actions = document.createElement("div");
+  actions.className = "import-prompt-actions";
+  const resumeButton = document.createElement("button");
+  resumeButton.type = "button";
+  resumeButton.className = "button-primary";
+  resumeButton.textContent = "Resume saved progress";
+  resumeButton.addEventListener("click", () => continueImportWithExistingProgress("resume"));
+
+  actions.append(resumeButton);
+
+  if (prompt.confirmReplace) {
+    const confirmButton = document.createElement("button");
+    confirmButton.type = "button";
+    confirmButton.className = "button-danger";
+    confirmButton.textContent = "Confirm replace";
+    confirmButton.addEventListener("click", () => continueImportWithExistingProgress("replace"));
+    const backButton = document.createElement("button");
+    backButton.type = "button";
+    backButton.textContent = "Back";
+    backButton.addEventListener("click", cancelReplaceConfirmation);
+    actions.append(confirmButton, backButton);
+  } else {
+    const replaceButton = document.createElement("button");
+    replaceButton.type = "button";
+    replaceButton.className = "button-danger";
+    replaceButton.textContent = "Replace with imported workbook";
+    replaceButton.addEventListener("click", requestReplaceConfirmation);
+    actions.append(replaceButton);
+  }
+
+  const cancelButton = document.createElement("button");
+  cancelButton.type = "button";
+  cancelButton.textContent = "Cancel";
+  cancelButton.addEventListener("click", cancelPendingImportPrompt);
+  actions.append(cancelButton);
+  wrapper.append(actions);
+  return wrapper;
+}
+
+async function continueImportWithSelectedWorksheet() {
+  const prompt = state.pendingImportPrompt;
+  if (!prompt || prompt.type !== "worksheet-selection") {
+    return;
+  }
+  const sheetName = prompt.selectedSheet || prompt.availableSheets?.[0] || "";
+  if (!sheetName) {
+    showMessage("Choose a worksheet before continuing.", "warning");
+    return;
+  }
+  await importXlsxRun(prompt.file, { ...prompt.options, sheetName });
+}
+
+function requestReplaceConfirmation() {
+  if (!state.pendingImportPrompt || state.pendingImportPrompt.type !== "existing-progress") {
+    return;
+  }
+  state.pendingImportPrompt.confirmReplace = true;
+  renderImportPrompt();
+  showMessage("Confirm before replacing saved local progress.", "warning");
+}
+
+function cancelReplaceConfirmation() {
+  if (!state.pendingImportPrompt || state.pendingImportPrompt.type !== "existing-progress") {
+    return;
+  }
+  state.pendingImportPrompt.confirmReplace = false;
+  renderImportPrompt();
+}
+
+async function continueImportWithExistingProgress(action) {
+  const prompt = state.pendingImportPrompt;
+  if (!prompt || prompt.type !== "existing-progress") {
+    return;
+  }
+  await importXlsxRun(prompt.file, { ...prompt.options, existingAction: action });
+}
+
+function cancelPendingImportPrompt() {
+  clearImportPrompt();
+  showMessage("Import cancelled.", "warning");
 }
 
 async function loadSavedRuns() {
@@ -478,6 +635,7 @@ async function deleteSavedRun(runId) {
 }
 
 function setRun(run, options = {}) {
+  clearImportPrompt();
   const { run: nextRun, recoveryAction } = applyUnsavedRecovery(run, options);
   state.run = normalizeRun(nextRun);
   state.selectedLocalId = state.run.cases[0]?.localId || null;
@@ -510,6 +668,7 @@ function setRun(run, options = {}) {
 }
 
 function clearActiveRun() {
+  clearImportPrompt();
   state.run = null;
   state.selectedLocalId = null;
   state.selectedCaseIds = new Set();

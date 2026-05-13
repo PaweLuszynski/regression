@@ -10,7 +10,7 @@ import {
 
 function sampleRun() {
   return {
-    id: "R30_export",
+    id: "R30_Worksheet",
     sourceFileName: "export.xlsx",
     sheetName: "Worksheet",
     runName: "Regression",
@@ -55,7 +55,7 @@ function sampleRun() {
 test("normalizeRestoredRun accepts current exported run shape and preserves local progress", () => {
   const run = normalizeRestoredRun(sampleRun());
 
-  assert.equal(run.id, "R30_export");
+  assert.equal(run.id, "R30_Worksheet");
   assert.equal(run.runName, "Regression");
   assert.equal(run.columns[0].key, "ID");
   assert.equal(run.version, "2.11");
@@ -89,7 +89,7 @@ test("normalizeRestoredRun creates a stable id from metadata when id is missing"
   const run = sampleRun();
   delete run.id;
 
-  assert.equal(normalizeRestoredRun(run).id, "R30_export");
+  assert.equal(normalizeRestoredRun(run).id, "R30_Worksheet");
 });
 
 test("parseRunProgressJson rejects invalid JSON with a readable error", () => {

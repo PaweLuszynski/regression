@@ -83,7 +83,7 @@ function restoredRunId(run) {
   if (explicitId && !path.isAbsolute(explicitId) && !explicitId.includes("/") && !explicitId.includes("\\")) {
     return explicitId;
   }
-  return createRunStorageKey(run.runId, run.sourceFileName || run.runName || "restored-run");
+  return createRunStorageKey(run.runId, run.runName || run.sourceFileName || "restored-run", run.sheetName || "Worksheet");
 }
 
 function safeSourceFileName(value) {

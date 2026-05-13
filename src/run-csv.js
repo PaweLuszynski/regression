@@ -56,7 +56,7 @@ export function normalizeRestoredCsvRun(headers, dataRows, options = {}) {
   );
   const sheetName = firstNonEmpty(rows.map((row) => getField(row, "sheetName"))) || "CSV";
   const importedAt = new Date().toISOString();
-  const id = createRunStorageKey(runId, sourceFileName);
+  const id = createRunStorageKey(runId, runName || sourceFileName, sheetName);
 
   const cases = rows.map((rawRow, index) => {
     const testId = valueOrEmpty(getField(rawRow, "testId"));

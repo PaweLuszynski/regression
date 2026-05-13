@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { Buffer } from "node:buffer";
 import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { once } from "node:events";
 import { test } from "node:test";
 import zlib from "node:zlib";
 
 import { createServer } from "../src/server.js";
+import { createLegacyRunStorageKey } from "../src/parser.js";
 import { progressPath } from "../src/server-runs.js";
 
 test("HTTP import requires worksheet selection for multiple usable sheets and imports the selected sheet", async () => {
@@ -131,6 +132,183 @@ test("HTTP import requires explicit resume or replace when saved local progress 
 
     const savedRun = JSON.parse(await readFile(progressPath(progressDir, replacePayload.run.id), "utf8"));
     assert.equal(savedRun.cases[0].localNotes, "");
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("HTTP import collision uses the saved run key rather than the source file name", async () => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-import-run-key-"));
+  const server = createServer({ host: "127.0.0.1", port: 4173, progressDir });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  try {
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const workbook = createWorkbook([
+      { name: "Worksheet", rows: [headers, ["T11", "Stable ID case", "", "", "", "C11", "", "", "", "", "", "", "Shared Run", "R11", "Section", "Plan > Main", "Untested", "", "", "", "", "", "", "Functional"]] }
+    ]);
+
+    const firstImport = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("first-name.xlsx")
+      },
+      body: workbook
+    });
+    assert.equal(firstImport.status, 201);
+
+    const collisionResponse = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("different-name.xlsx")
+      },
+      body: workbook
+    });
+    const collisionPayload = await collisionResponse.json();
+    assert.equal(collisionResponse.status, 409);
+    assert.equal(collisionPayload.decisionRequired, true);
+    assert.equal(collisionPayload.importedRunSummary.runId, "R11");
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("HTTP worksheet selection does not bypass existing-progress collision handling", async () => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-import-sheet-collision-"));
+  const server = createServer({ host: "127.0.0.1", port: 4173, progressDir });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  try {
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const workbook = createWorkbook([
+      { name: "Archive", rows: [headers, ["T20", "Archive case", "", "", "", "C20", "", "", "", "", "", "", "Archive Run", "R20", "Section", "Plan > Archive", "Untested", "", "", "", "", "", "", "Functional"]] },
+      { name: "Main", rows: [headers, ["T21", "Main case", "", "", "", "C21", "", "", "", "", "", "", "Main Run", "R21", "Section", "Plan > Main", "Untested", "", "", "", "", "", "", "Functional"]] }
+    ]);
+
+    const firstImport = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("multi.xlsx"),
+        "x-import-sheet-name": encodeURIComponent("Main")
+      },
+      body: workbook
+    });
+    const firstPayload = await firstImport.json();
+    assert.equal(firstImport.status, 201);
+
+    const updatedRun = structuredClone(firstPayload.run);
+    updatedRun.cases[0].localNotes = "preserve me";
+    const saveResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(updatedRun.id)}`, {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ run: updatedRun })
+    });
+    assert.equal(saveResponse.status, 200);
+
+    const initialSelectionResponse = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("multi.xlsx")
+      },
+      body: workbook
+    });
+    const initialSelectionPayload = await initialSelectionResponse.json();
+    assert.equal(initialSelectionResponse.status, 409);
+    assert.equal(initialSelectionPayload.worksheetSelectionRequired, true);
+
+    const collisionResponse = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("multi.xlsx"),
+        "x-import-sheet-name": encodeURIComponent("Main")
+      },
+      body: workbook
+    });
+    const collisionPayload = await collisionResponse.json();
+    assert.equal(collisionResponse.status, 409);
+    assert.equal(collisionPayload.decisionRequired, true);
+    assert.equal(collisionPayload.reason, "existing-progress");
+    assert.equal(collisionPayload.importedRunSummary.sheetName, "Main");
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+});
+
+test("HTTP import collision still finds legacy filename-based saved runs", async () => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-import-legacy-collision-"));
+  const server = createServer({ host: "127.0.0.1", port: 4173, progressDir });
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+
+  try {
+    const address = server.address();
+    const baseUrl = `http://127.0.0.1:${address.port}`;
+    const workbook = createWorkbook([
+      { name: "Worksheet", rows: [headers, ["T31", "Legacy collision", "", "", "", "C31", "", "", "", "", "", "", "Legacy Run", "R31", "Section", "Plan > Main", "Untested", "", "", "", "", "", "", "Functional"]] }
+    ]);
+
+    const legacyId = createLegacyRunStorageKey("R31", "legacy-name.xlsx");
+    await writeFile(progressPath(progressDir, legacyId), JSON.stringify({
+      id: legacyId,
+      sourceFileName: "legacy-name.xlsx",
+      sheetName: "Worksheet",
+      runName: "Legacy Run",
+      runId: "R31",
+      importedAt: "2026-05-13T10:00:00.000Z",
+      savedAt: "2026-05-13T10:01:00.000Z",
+      columns: [{ index: 0, name: "ID", key: "ID" }],
+      cases: [{
+        localId: "T31",
+        testId: "T31",
+        caseId: "C31",
+        title: "Legacy collision",
+        originalStatus: "Untested",
+        currentStatus: "Passed",
+        localNotes: "legacy progress",
+        localDefects: "",
+        localEvidence: "",
+        updatedAt: "2026-05-13T10:02:00.000Z",
+        rawRow: { ID: "T31", Status: "Untested" },
+        steps: []
+      }]
+    }, null, 2));
+
+    const collisionResponse = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("new-name.xlsx")
+      },
+      body: workbook
+    });
+    const collisionPayload = await collisionResponse.json();
+    assert.equal(collisionResponse.status, 409);
+    assert.equal(collisionPayload.decisionRequired, true);
+
+    const resumeResponse = await fetch(`${baseUrl}/api/import`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/octet-stream",
+        "x-file-name": encodeURIComponent("new-name.xlsx"),
+        "x-import-existing-action": "resume"
+      },
+      body: workbook
+    });
+    const resumePayload = await resumeResponse.json();
+    assert.equal(resumeResponse.status, 200);
+    assert.equal(resumePayload.run.cases[0].localNotes, "legacy progress");
   } finally {
     server.closeAllConnections();
     server.close();

@@ -44,7 +44,7 @@ export async function parseTestRailRunFromBuffer(buffer, options = {}) {
   const runName = firstNonEmpty(cases.map((testCase) => testCase.rawRow.Run));
   const runId = firstNonEmpty(cases.map((testCase) => testCase.rawRow["Run ID"]));
   const importedAt = new Date().toISOString();
-  const id = createRunStorageKey(runId, sourceFileName);
+  const id = createRunStorageKey(runId, runName || sourceFileName, selectedSheet.name);
 
   return normalizeRun({
     id,
@@ -128,7 +128,18 @@ function inspectWorkbookFromBufferFromWorkbook(workbook) {
   };
 }
 
-export function createRunStorageKey(runId, sourceFileName) {
+export function createRunStorageKey(runId, fallbackName, sheetName = "") {
+  const baseName = runId || fallbackName || "run";
+  return [baseName, sheetName]
+    .filter(Boolean)
+    .join("_")
+    .replaceAll(/\s+/g, "_")
+    .replaceAll(/[^\w.-]+/g, "_")
+    .replaceAll(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+export function createLegacyRunStorageKey(runId, sourceFileName) {
   const baseName = path.basename(sourceFileName || "import", path.extname(sourceFileName || ""));
   return `${runId || "run"}_${baseName}`
     .replaceAll(/\s+/g, "_")

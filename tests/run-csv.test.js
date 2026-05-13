@@ -17,7 +17,7 @@ test("parseRunProgressCsv restores current and original statuses separately", ()
   ].join("\n");
 
   const run = parseRunProgressCsv(csv);
-  assert.equal(run.id, "R30_backup");
+  assert.equal(run.id, "R30_Worksheet");
   assert.equal(run.runName, "Regression");
   assert.equal(run.sheetName, "Worksheet");
   assert.equal(run.cases[0].testId, "T1");
@@ -36,7 +36,7 @@ test("parseRunProgressCsv falls back original status to current status when miss
     "T2,Run checkout,Retest"
   ].join("\n");
   const run = parseRunProgressCsv(csv, { sourceFileName: "progress.csv" });
-  assert.equal(run.id, "run_progress");
+  assert.equal(run.id, "CSV_Restored_Run_CSV");
   assert.equal(run.cases[0].originalStatus, "Retest");
   assert.equal(run.cases[0].currentStatus, "Retest");
   assert.deepEqual(run.availableStatuses, ["Retest"]);
