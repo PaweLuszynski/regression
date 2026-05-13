@@ -509,11 +509,9 @@ function render(options = {}) {
     }
   };
 
-  if (options.preserveScroll) {
-    withCaseListScrollPreserved(doRender);
-  } else {
-    doRender();
-  }
+  const renderWithCaseScroll = options.preserveScroll ? withCaseListScrollPreserved : runImmediately;
+  const renderWithDetailScroll = options.preserveDetailScroll ? withDetailPaneScrollPreserved : runImmediately;
+  renderWithCaseScroll(() => renderWithDetailScroll(doRender));
 }
 
 
@@ -848,6 +846,9 @@ function createStepStatusEditor(testCase, stepIndex, row) {
   wrapper.className = "step-status-editor";
 
   const select = document.createElement("select");
+  select.className = "step-status-select";
+  select.dataset.stepLocalId = testCase.localId;
+  select.dataset.stepIndex = String(stepIndex);
   const empty = document.createElement("option");
   empty.value = "";
   empty.textContent = "Choose status";
@@ -970,7 +971,7 @@ async function updateCaseStepStatus(localId, stepIndex, status) {
     showMessage("Selected step was not found.", "error");
     return;
   }
-  render({ preserveScroll: true });
+  render({ preserveScroll: true, preserveDetailScroll: true });
   try {
     await saveProgress();
     showMessage(`Updated step status to ${status || "blank"}.`, "success");
@@ -1295,6 +1296,18 @@ function withCaseListScrollPreserved(callback) {
   callback();
   elements.tableWrap.scrollTop = scrollTop;
   elements.tableWrap.scrollLeft = scrollLeft;
+}
+
+function withDetailPaneScrollPreserved(callback) {
+  const scrollTop = elements.detailPane.scrollTop;
+  const scrollLeft = elements.detailPane.scrollLeft;
+  callback();
+  elements.detailPane.scrollTop = scrollTop;
+  elements.detailPane.scrollLeft = scrollLeft;
+}
+
+function runImmediately(callback) {
+  callback();
 }
 
 function exportJson() {
