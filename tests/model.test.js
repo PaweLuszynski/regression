@@ -102,6 +102,42 @@ test("getRunStatuses derives custom statuses from imported and local run data", 
   ]);
 });
 
+test("getRunStatuses deduplicates repeated malformed step status blobs", () => {
+  const run = {
+    cases: [
+      {
+        originalStatus: "Untested",
+        currentStatus: "Untested",
+        stepsStatus: "Untested Untested Untested Untested",
+        steps: [
+          { status: "Untested", currentStatus: "Untested" }
+        ]
+      }
+    ]
+  };
+
+  assert.deepEqual(getRunStatuses(run), ["Untested"]);
+});
+
+test("getRunStatuses ignores malformed long status-like text", () => {
+  const run = {
+    cases: [
+      {
+        originalStatus: "Passed",
+        currentStatus: "Passed",
+        steps: [
+          {
+            status: "Step Description Submit form Expected Result Dashboard opens",
+            currentStatus: ""
+          }
+        ]
+      }
+    ]
+  };
+
+  assert.deepEqual(getRunStatuses(run), ["Passed"]);
+});
+
 test("calculateRunStats uses current statuses and separates completed from passed", () => {
   const stats = calculateRunStats([
     { currentStatus: "Passed" },
@@ -164,6 +200,17 @@ test("parseSteps distributes repeated unnumbered step statuses", () => {
 
   assert.equal(steps[0].status, "Untested");
   assert.equal(steps[1].status, "Untested");
+});
+
+test("parseSteps ignores repeated malformed single-line status blobs", () => {
+  const steps = parseSteps({
+    "Steps (Step)": "1. Open page.\n2. Submit form.",
+    "Steps (Expected Result)": "1. Page opens.\n2. Validation is shown.",
+    "Steps (Status)": "Untested Untested Untested Untested"
+  });
+
+  assert.equal(steps[0].status, "");
+  assert.equal(steps[1].status, "");
 });
 
 test("parseSteps falls back to rich duplicate Steps content", () => {
@@ -445,6 +492,26 @@ test("normalizeRun materializes available statuses and editable step state", () 
   assert.deepEqual(run.availableStatuses, ["Ready For QA", "Needs Review"]);
   assert.equal(run.cases[0].steps[0].status, "Needs Review");
   assert.equal(run.cases[0].steps[0].currentStatus, "Needs Review");
+});
+
+test("normalizeRun preserves blank local step status when no imported step status exists", () => {
+  const run = normalizeRun({
+    id: "run",
+    cases: [{
+      localId: "T1",
+      originalStatus: "Passed",
+      currentStatus: "Passed",
+      steps: [{
+        step: "Open page",
+        expectedResult: "Page opens",
+        status: "",
+        currentStatus: ""
+      }]
+    }]
+  });
+
+  assert.equal(run.cases[0].steps[0].status, "");
+  assert.equal(run.cases[0].steps[0].currentStatus, "");
 });
 
 test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {

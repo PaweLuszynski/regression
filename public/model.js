@@ -64,11 +64,15 @@ export function getStatusColor(status) {
 }
 
 export function normalizeStatusValue(value, availableStatuses = statuses) {
-  const text = String(value || "").trim();
+  const text = cleanStatusText(value);
   if (!text) {
     return "";
   }
-  return normalizeStatus(text, availableStatuses) || text;
+  const normalized = normalizeStatus(text, availableStatuses);
+  if (normalized) {
+    return normalized;
+  }
+  return isUsableStatusCandidate(text, availableStatuses) ? text : "";
 }
 
 export function normalizeStatusList(values, fallbackStatuses = statuses) {
@@ -110,7 +114,7 @@ export function normalizeStepRows(stepRows, availableStatuses = statuses) {
 export function collectCaseStatuses(cases) {
   const collected = [];
   for (const testCase of Array.isArray(cases) ? cases : []) {
-    collected.push(testCase?.originalStatus, testCase?.currentStatus, testCase?.rawRow?.Status, testCase?.stepsStatus);
+    collected.push(testCase?.originalStatus, testCase?.currentStatus, testCase?.rawRow?.Status);
     for (const row of Array.isArray(testCase?.steps) ? testCase.steps : []) {
       collected.push(row?.status, row?.currentStatus);
     }
@@ -500,7 +504,9 @@ function splitStatusItems(value, availableStatuses = statuses) {
 
   const numbered = splitNumberedItems(text);
   if (numbered.length > 1 || numbered[0] !== text) {
-    return numbered;
+    return numbered
+      .map((item) => normalizeStatusValue(item, availableStatuses))
+      .filter(Boolean);
   }
 
   const statusPattern = availableStatuses
@@ -515,13 +521,19 @@ function splitStatusItems(value, availableStatuses = statuses) {
     .map((match) => normalizeStatus(match[0], availableStatuses))
     .filter(Boolean);
   if (matches.length > 0) {
+    if (matches.length > 2 && new Set(matches.map((status) => status.toLowerCase())).size === 1) {
+      return [];
+    }
     return matches;
   }
-  return text.split(/\n+/).map((part) => part.trim()).filter(Boolean);
+  return text.split(/\n+/)
+    .map((part) => normalizeStatusValue(part, availableStatuses))
+    .filter(Boolean);
 }
 
 function normalizeStatus(value, availableStatuses = statuses) {
-  return availableStatuses.find((status) => status.toLowerCase() === String(value).toLowerCase()) || "";
+  const cleanValue = cleanStatusText(value);
+  return availableStatuses.find((status) => status.toLowerCase() === cleanValue.toLowerCase()) || "";
 }
 
 function escapeRegExp(value) {
@@ -667,4 +679,47 @@ function decodeXmlEntities(value) {
     .replaceAll("&quot;", '"')
     .replaceAll("&apos;", "'")
     .replaceAll("&amp;", "&");
+}
+
+function cleanStatusText(value) {
+  return htmlToReadableText(value).replaceAll(/\s+/g, " ").trim();
+}
+
+function isUsableStatusCandidate(value, availableStatuses = statuses) {
+  const text = cleanStatusText(value);
+  if (!text) {
+    return false;
+  }
+  if (text.length > 48) {
+    return false;
+  }
+  if (/[<>:]/.test(text)) {
+    return false;
+  }
+  if (/step description|expected result|additional info|references?/i.test(text)) {
+    return false;
+  }
+  if (text.split(" ").length > 6) {
+    return false;
+  }
+
+  const lower = text.toLowerCase();
+  const repeatedWords = lower.split(" ");
+  if (repeatedWords.length > 1 && new Set(repeatedWords).size === 1) {
+    return false;
+  }
+
+  const normalizedStatuses = normalizeStatusList(availableStatuses, []);
+  for (const status of normalizedStatuses) {
+    const normalizedStatus = cleanStatusText(status);
+    if (!normalizedStatus) {
+      continue;
+    }
+    const pattern = new RegExp(`^(?:${escapeRegExp(normalizedStatus)}\\s+){1,}${escapeRegExp(normalizedStatus)}$`, "i");
+    if (pattern.test(text)) {
+      return false;
+    }
+  }
+
+  return true;
 }

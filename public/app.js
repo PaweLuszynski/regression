@@ -768,7 +768,7 @@ function stepsTable(testCase) {
     return wrapper;
   }
 
-  const hasStepStatus = rows.some((row) => row.status || row.currentStatus);
+  const hasStepStatus = rows.length > 0;
   const hasExtras = rows.some((row) => row.additionalInfo || row.references);
   const scroll = document.createElement("div");
   scroll.className = "steps-scroll";
