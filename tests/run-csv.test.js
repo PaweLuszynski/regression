@@ -27,6 +27,7 @@ test("parseRunProgressCsv restores current and original statuses separately", ()
   assert.equal(run.cases[0].localDefects, "BUG-1");
   assert.equal(run.cases[0].localEvidence, "link");
   assert.equal(run.cases[0].rawRow["Section Hierarchy"], "Suite > Auth");
+  assert.deepEqual(run.availableStatuses, ["Untested", "Passed"]);
 });
 
 test("parseRunProgressCsv falls back original status to current status when missing", () => {
@@ -38,6 +39,7 @@ test("parseRunProgressCsv falls back original status to current status when miss
   assert.equal(run.id, "run_progress");
   assert.equal(run.cases[0].originalStatus, "Retest");
   assert.equal(run.cases[0].currentStatus, "Retest");
+  assert.deepEqual(run.availableStatuses, ["Retest"]);
 });
 
 test("parseRunProgressCsv rejects missing required columns", () => {

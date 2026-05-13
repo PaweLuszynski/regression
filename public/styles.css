@@ -990,7 +990,7 @@ pre {
 
 .steps-table {
   width: 100%;
-  min-width: 820px;
+  min-width: 920px;
   table-layout: fixed;
 }
 
@@ -1003,7 +1003,7 @@ pre {
 }
 
 .steps-col-status {
-  width: 110px;
+  width: 200px;
 }
 
 .steps-col-more {
@@ -1020,6 +1020,32 @@ pre {
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
+}
+
+.step-status-editor {
+  display: grid;
+  gap: 4px;
+}
+
+.step-status-editor select {
+  width: 100%;
+  min-width: 170px;
+  min-height: 38px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--text);
+  padding: 8px 34px 8px 12px;
+  line-height: 1.35;
+  font-size: 14px;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+.step-status-original {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .steps-table .status-badge {

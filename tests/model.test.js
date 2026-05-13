@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   appendNoteToCases,
+  applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
   buildTreeFromCases,
@@ -11,8 +12,10 @@ import {
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
+  getRunStatuses,
   getStatusColor,
   groupCasesBySection,
+  normalizeRun,
   resolveUnsavedRunRecovery,
   sortSavedRuns,
   resizeCaseListColumns,
@@ -63,13 +66,8 @@ test("buildTreeFromCases creates nested folders from section hierarchy", () => {
   assert.equal(tree.children[1].name, "Fallback Section");
   assert.deepEqual(tree.children[0].counts, {
     Passed: 1,
-    Untested: 0,
     Failed: 1,
-    "In test": 0,
-    Retest: 0,
-    Blocked: 0,
-    "Conditionally Passed": 0,
-    Skipped: 0
+    Untested: 0
   });
 });
 
@@ -82,6 +80,62 @@ test("getStatusColor returns readable semantic status classes", () => {
   assert.equal(getStatusColor("Blocked").className, "status-blocked");
   assert.equal(getStatusColor("Conditionally Passed").className, "status-conditionally-passed");
   assert.equal(getStatusColor("Unknown").className, "status-unknown");
+});
+
+test("getRunStatuses derives custom statuses from imported and local run data", () => {
+  const run = {
+    cases: [
+      {
+        originalStatus: "Ready For QA",
+        currentStatus: "Blocked By Vendor",
+        steps: [
+          { status: "Needs Review", currentStatus: "Needs Review" }
+        ]
+      }
+    ]
+  };
+
+  assert.deepEqual(getRunStatuses(run), [
+    "Ready For QA",
+    "Blocked By Vendor",
+    "Needs Review"
+  ]);
+});
+
+test("getRunStatuses deduplicates repeated malformed step status blobs", () => {
+  const run = {
+    cases: [
+      {
+        originalStatus: "Untested",
+        currentStatus: "Untested",
+        stepsStatus: "Untested Untested Untested Untested",
+        steps: [
+          { status: "Untested", currentStatus: "Untested" }
+        ]
+      }
+    ]
+  };
+
+  assert.deepEqual(getRunStatuses(run), ["Untested"]);
+});
+
+test("getRunStatuses ignores malformed long status-like text", () => {
+  const run = {
+    cases: [
+      {
+        originalStatus: "Passed",
+        currentStatus: "Passed",
+        steps: [
+          {
+            status: "Step Description Submit form Expected Result Dashboard opens",
+            currentStatus: ""
+          }
+        ]
+      }
+    ]
+  };
+
+  assert.deepEqual(getRunStatuses(run), ["Passed"]);
 });
 
 test("calculateRunStats uses current statuses and separates completed from passed", () => {
@@ -100,6 +154,16 @@ test("calculateRunStats uses current statuses and separates completed from passe
   assert.equal(stats.counts.Passed, 1);
   assert.equal(stats.counts.Untested, 1);
   assert.equal(stats.counts["Conditionally Passed"], 1);
+});
+
+test("calculateRunStats tracks custom imported statuses", () => {
+  const stats = calculateRunStats([
+    { currentStatus: "Ready For QA" },
+    { currentStatus: "Blocked By Vendor" }
+  ], ["Ready For QA", "Blocked By Vendor"]);
+
+  assert.equal(stats.counts["Ready For QA"], 1);
+  assert.equal(stats.counts["Blocked By Vendor"], 1);
 });
 
 test("parseSteps aligns numbered steps with numbered expected results", () => {
@@ -136,6 +200,17 @@ test("parseSteps distributes repeated unnumbered step statuses", () => {
 
   assert.equal(steps[0].status, "Untested");
   assert.equal(steps[1].status, "Untested");
+});
+
+test("parseSteps ignores repeated malformed single-line status blobs", () => {
+  const steps = parseSteps({
+    "Steps (Step)": "1. Open page.\n2. Submit form.",
+    "Steps (Expected Result)": "1. Page opens.\n2. Validation is shown.",
+    "Steps (Status)": "Untested Untested Untested Untested"
+  });
+
+  assert.equal(steps[0].status, "");
+  assert.equal(steps[1].status, "");
 });
 
 test("parseSteps falls back to rich duplicate Steps content", () => {
@@ -241,6 +316,21 @@ test("applyStatusToCases updates only selected cases", () => {
   assert.equal(cases[1].currentStatus, "Failed");
   assert.equal(cases[2].currentStatus, "Retest");
   assert.equal(cases[2].originalStatus, "Passed");
+});
+
+test("applyStepStatusToCase updates current step status without overwriting imported step status", () => {
+  const cases = [{
+    localId: "a",
+    updatedAt: "old",
+    steps: [{ status: "Untested", currentStatus: "Untested" }]
+  }];
+
+  const result = applyStepStatusToCase(cases, "a", 0, "Passed", "now");
+
+  assert.equal(result.changed, 1);
+  assert.equal(cases[0].steps[0].status, "Untested");
+  assert.equal(cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(cases[0].updatedAt, "now");
 });
 
 test("getNextCaseId returns the next visible id or null for the last case", () => {
@@ -382,6 +472,46 @@ test("latestRunTimestamp returns most recent valid timestamp from run fields", (
   });
 
   assert.equal(timestamp, Date.parse("2026-05-06T12:00:00.000Z"));
+});
+
+test("normalizeRun materializes available statuses and editable step state", () => {
+  const run = normalizeRun({
+    id: "run",
+    cases: [{
+      localId: "T1",
+      originalStatus: "Ready For QA",
+      currentStatus: "Ready For QA",
+      rawRow: {
+        "Steps (Step)": "1. Open page",
+        "Steps (Expected Result)": "1. Page opens",
+        "Steps (Status)": "1. Needs Review"
+      }
+    }]
+  });
+
+  assert.deepEqual(run.availableStatuses, ["Ready For QA", "Needs Review"]);
+  assert.equal(run.cases[0].steps[0].status, "Needs Review");
+  assert.equal(run.cases[0].steps[0].currentStatus, "Needs Review");
+});
+
+test("normalizeRun preserves blank local step status when no imported step status exists", () => {
+  const run = normalizeRun({
+    id: "run",
+    cases: [{
+      localId: "T1",
+      originalStatus: "Passed",
+      currentStatus: "Passed",
+      steps: [{
+        step: "Open page",
+        expectedResult: "Page opens",
+        status: "",
+        currentStatus: ""
+      }]
+    }]
+  });
+
+  assert.equal(run.cases[0].steps[0].status, "");
+  assert.equal(run.cases[0].steps[0].currentStatus, "");
 });
 
 test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {

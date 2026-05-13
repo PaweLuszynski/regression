@@ -37,6 +37,7 @@ export function createServer(options = {}) {
     host: options.host || defaultHost,
     port: Number(options.port || defaultPort)
   };
+
   return http.createServer(async (request, response) => {
     try {
       await route(request, response, context);
@@ -51,17 +52,16 @@ export function startServer(options = {}) {
   const host = options.host || defaultHost;
   const port = Number(options.port || defaultPort);
   const progressDir = options.progressDir || defaultProgressDir;
-
   server.listen(port, host, () => {
     console.log(`TestRail local run viewer: http://${host}:${port}`);
     console.log(`Progress directory: ${progressDir}`);
   });
-
   return server;
 }
 
 async function route(request, response, context) {
-  const url = new URL(request.url || "/", `http://${context.host}:${context.port}`);
+  const { host, port, progressDir, publicDir } = context;
+  const url = new URL(request.url || "/", `http://${host}:${port}`);
   const pathname = normalizePathname(url.pathname);
 
   if (request.method === "GET" && pathname === "/favicon.ico") {
@@ -70,7 +70,7 @@ async function route(request, response, context) {
   }
 
   if (request.method === "GET" && pathname === "/api/runs") {
-    return sendJson(response, 200, { runs: await listSavedRunsFromDir(context.progressDir) });
+    return sendJson(response, 200, { runs: await listSavedRunsFromDir(progressDir) });
   }
 
   if (request.method === "POST" && pathname === "/api/import") {
@@ -110,7 +110,7 @@ async function route(request, response, context) {
       return sendJson(response, 400, { error: error.message || "Import failed." });
     }
 
-    const existingRun = await readSavedRun(context.progressDir, importedRun.id);
+    const existingRun = await readSavedRun(progressDir, importedRun.id);
     if (existingRun && !existingAction) {
       return sendJson(response, 409, {
         decisionRequired: true,
@@ -129,7 +129,7 @@ async function route(request, response, context) {
       });
     }
 
-    await saveRun(context.progressDir, importedRun);
+    await saveRun(progressDir, importedRun);
     return sendJson(response, existingRun ? 200 : 201, {
       run: importedRun,
       existingProgressFound: false,
@@ -148,7 +148,7 @@ async function route(request, response, context) {
       return sendJson(response, 400, { error: error.message || "Invalid JSON progress file." });
     }
 
-    await saveRun(context.progressDir, restoredRun);
+    await saveRun(progressDir, restoredRun);
     return sendJson(response, 201, {
       run: restoredRun,
       message: "JSON progress restored and saved locally."
@@ -165,7 +165,7 @@ async function route(request, response, context) {
       return sendJson(response, 400, { error: error.message || "Invalid CSV progress file." });
     }
 
-    await saveRun(context.progressDir, restoredRun);
+    await saveRun(progressDir, restoredRun);
     return sendJson(response, 201, {
       run: restoredRun,
       message: "CSV progress restored and saved locally."
@@ -174,7 +174,7 @@ async function route(request, response, context) {
 
   const runMatch = pathname.match(/^\/api\/runs\/([^/]+)$/);
   if (runMatch && request.method === "GET") {
-    const run = await readSavedRun(context.progressDir, runMatch[1]);
+    const run = await readSavedRun(progressDir, runMatch[1]);
     if (!run) {
       return sendJson(response, 404, { error: "Saved run was not found." });
     }
@@ -195,7 +195,7 @@ async function route(request, response, context) {
     if (!run || run.id !== runMatch[1] || !Array.isArray(run.cases)) {
       return sendJson(response, 400, { error: "Invalid run payload." });
     }
-    await saveRun(context.progressDir, run);
+    await saveRun(progressDir, run);
     return sendJson(response, 200, { run, message: "Progress saved." });
   }
 
@@ -204,7 +204,7 @@ async function route(request, response, context) {
     if (!isSafeRunId(runId)) {
       return sendJson(response, 400, { error: "Invalid saved run ID." });
     }
-    const result = await deleteSavedRunFromDir(context.progressDir, runId);
+    const result = await deleteSavedRunFromDir(progressDir, runId);
     if (!result.deleted) {
       return sendJson(response, 404, { error: "Saved run was not found." });
     }
@@ -213,7 +213,7 @@ async function route(request, response, context) {
 
   const exportMatch = pathname.match(/^\/api\/runs\/([^/]+)\/export$/);
   if (exportMatch && request.method === "GET") {
-    const run = await readSavedRun(context.progressDir, exportMatch[1]);
+    const run = await readSavedRun(progressDir, exportMatch[1]);
     if (!run) {
       return sendJson(response, 404, { error: "Saved run was not found." });
     }
@@ -227,7 +227,7 @@ async function route(request, response, context) {
   }
 
   if (request.method === "GET") {
-    return serveStatic(pathname, response, context.publicDir);
+    return serveStatic(pathname, response, publicDir);
   }
 
   sendJson(response, 405, { error: "Method not allowed." });

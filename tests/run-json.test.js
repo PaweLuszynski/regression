@@ -29,6 +29,16 @@ function sampleRun() {
         localNotes: "Restored note",
         localDefects: "BUG-1",
         localEvidence: "Screenshot link",
+        steps: [
+          {
+            step: "Open page",
+            expectedResult: "Page loads",
+            status: "Untested",
+            currentStatus: "Blocked",
+            additionalInfo: "",
+            references: ""
+          }
+        ],
         updatedAt: "2026-05-06T11:00:00.000Z",
         rawRow: {
           ID: "T1",
@@ -56,9 +66,12 @@ test("normalizeRestoredRun accepts current exported run shape and preserves loca
   assert.equal(run.cases[0].localNotes, "Restored note");
   assert.equal(run.cases[0].localDefects, "BUG-1");
   assert.equal(run.cases[0].localEvidence, "Screenshot link");
+  assert.equal(run.cases[0].steps[0].status, "Untested");
+  assert.equal(run.cases[0].steps[0].currentStatus, "Blocked");
   assert.equal(run.cases[0].updatedAt, "2026-05-06T11:00:00.000Z");
   assert.equal(run.cases[0].rawRow.Unknown, "preserve me");
   assert.equal(run.cases[0].unexpectedCaseField, "still here");
+  assert.deepEqual(run.availableStatuses, ["Untested", "Passed", "Blocked"]);
 });
 
 test("parseRunProgressJson accepts wrapped schema progress files", () => {
