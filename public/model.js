@@ -99,16 +99,23 @@ export function normalizeStatusList(values, fallbackStatuses = statuses) {
 export function normalizeStepRows(stepRows, availableStatuses = statuses) {
   return (Array.isArray(stepRows) ? stepRows : []).map((row) => {
     const importedStatus = normalizeStatusValue(row?.status, availableStatuses);
-    const currentStatus = normalizeStatusValue(row?.currentStatus ?? importedStatus, availableStatuses);
+    const localCurrentStatusRaw = row?.localCurrentStatus;
+    const localCurrentStatus = normalizeStatusValue(localCurrentStatusRaw, availableStatuses);
+    const hasLocalOverride = localCurrentStatusRaw != null && String(localCurrentStatusRaw) !== "";
+    const currentStatus = normalizeStatusValue(
+      row?.currentStatus ?? (hasLocalOverride ? localCurrentStatus : importedStatus),
+      availableStatuses
+    );
     return {
       step: String(row?.step || ""),
       expectedResult: String(row?.expectedResult || ""),
       status: importedStatus,
+      localCurrentStatus,
       currentStatus,
       additionalInfo: String(row?.additionalInfo || ""),
       references: String(row?.references || "")
     };
-  }).filter((row) => row.step || row.expectedResult || row.status || row.currentStatus || row.additionalInfo || row.references);
+  }).filter((row) => row.step || row.expectedResult || row.status || row.currentStatus || row.localCurrentStatus || row.additionalInfo || row.references);
 }
 
 export function collectCaseStatuses(cases) {
@@ -315,6 +322,7 @@ export function applyStepStatusToCase(cases, localId, stepIndex, status, updated
     return { changed: 0 };
   }
   testCase.steps[stepIndex].currentStatus = status;
+  testCase.steps[stepIndex].localCurrentStatus = status;
   testCase.updatedAt = updatedAt;
   return { changed: 1 };
 }

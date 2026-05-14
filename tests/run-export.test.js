@@ -114,8 +114,8 @@ test("buildCsvExport uses current local values, includes workbook fields, and ex
         stepsStatus: "Untested",
         testCaseLabels: "critical",
         steps: [
-          { step: "Fill cart", expectedResult: "Order placed", status: "Untested", currentStatus: "Passed" },
-          { step: "Submit", expectedResult: "Confirmation shown", status: "Untested", currentStatus: "Blocked" }
+          { step: "Fill cart", expectedResult: "Order placed", status: "Untested", currentStatus: "Passed", localCurrentStatus: "Passed" },
+          { step: "Submit", expectedResult: "Confirmation shown", status: "Untested", currentStatus: "Blocked", localCurrentStatus: "Blocked" }
         ],
         rawRow: {
           ID: "T9",
@@ -185,4 +185,39 @@ test("buildCsvExport uses current local values, includes workbook fields, and ex
   assert.equal(rowByHeader["Defects"], "BUG-0");
   assert.equal(rowByHeader["Run"], "Execution");
   assert.equal(rowByHeader["Status"], "Untested");
+});
+
+test("buildCsvExport keeps Local Step Statuses separate from imported step statuses", () => {
+  const csv = buildCsvExport({
+    runId: "R210",
+    runName: "Execution",
+    sheetName: "Sheet A",
+    sourceFileName: "origin.xlsx",
+    columns: [
+      { name: "Steps (Status)", key: "Steps (Status)" }
+    ],
+    cases: [
+      {
+        testId: "T10",
+        caseId: "C10",
+        title: "Mixed step edits",
+        originalStatus: "Untested",
+        currentStatus: "In test",
+        stepsStatus: "Untested\nUntested\nUntested",
+        steps: [
+          { step: "One", expectedResult: "A", status: "Untested", currentStatus: "Passed", localCurrentStatus: "Passed" },
+          { step: "Two", expectedResult: "B", status: "Untested", currentStatus: "Untested", localCurrentStatus: "" },
+          { step: "Three", expectedResult: "C", status: "Untested", currentStatus: "Failed", localCurrentStatus: "Failed" }
+        ],
+        rawRow: {
+          "Steps (Status)": "Untested\nUntested\nUntested"
+        }
+      }
+    ]
+  });
+
+  const [headers, row] = parseCsvRecords(csv);
+  const rowByHeader = Object.fromEntries(headers.map((header, index) => [header, row[index]]));
+  assert.equal(rowByHeader["Steps (Status)"], "Untested\nUntested\nUntested");
+  assert.equal(rowByHeader["Local Step Statuses"], "Passed\n\nFailed");
 });

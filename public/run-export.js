@@ -89,9 +89,22 @@ function serializeLocalStepStatuses(steps) {
   if (!Array.isArray(steps) || steps.length === 0) {
     return "";
   }
-  return steps.map((row) => row?.currentStatus || "").join("\n");
+  return steps.map((row) => resolveLocalStepStatus(row)).join("\n");
 }
 
 function csvColumn(header, getValue) {
   return { header, getValue };
+}
+
+function resolveLocalStepStatus(row) {
+  if (!row || typeof row !== "object") {
+    return "";
+  }
+  if (row.localCurrentStatus != null && String(row.localCurrentStatus) !== "") {
+    return String(row.localCurrentStatus);
+  }
+  if (row.currentStatus && row.currentStatus !== row.status) {
+    return String(row.currentStatus);
+  }
+  return "";
 }

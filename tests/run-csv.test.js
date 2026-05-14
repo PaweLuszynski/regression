@@ -54,6 +54,25 @@ test("parseRunProgressCsv restores richer workbook fields and local step statuse
   assert.equal(run.cases[0].rawRow.Comment, "Imported comment");
   assert.equal(run.cases[0].rawRow.Defects, "BUG-0");
   assert.equal(run.cases[0].rawRow["Test Labels"], "smoke");
+  assert.equal(run.cases[0].steps[0].localCurrentStatus, "Passed");
+  assert.equal(run.cases[0].steps[1].localCurrentStatus, "Blocked");
+});
+
+test("parseRunProgressCsv keeps blank local step overrides separate from imported statuses", () => {
+  const csv = [
+    "ID,Title,Current Status,Steps (Step),Steps (Expected Result),Steps (Status),Local Step Statuses",
+    "T8,Case with steps,In test,\"1. First\n2. Second\n3. Third\",\"1. One\n2. Two\n3. Three\",\"1. Untested\n2. Untested\n3. Untested\",\"Passed\n\nFailed\""
+  ].join("\n");
+
+  const run = parseRunProgressCsv(csv);
+  assert.equal(run.cases[0].steps[0].status, "Untested");
+  assert.equal(run.cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(run.cases[0].steps[0].localCurrentStatus, "Passed");
+  assert.equal(run.cases[0].steps[1].status, "Untested");
+  assert.equal(run.cases[0].steps[1].currentStatus, "Untested");
+  assert.equal(run.cases[0].steps[1].localCurrentStatus, "");
+  assert.equal(run.cases[0].steps[2].currentStatus, "Failed");
+  assert.equal(run.cases[0].steps[2].localCurrentStatus, "Failed");
 });
 
 test("parseRunProgressCsv falls back original status to current status when missing", () => {

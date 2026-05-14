@@ -322,7 +322,7 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   const cases = [{
     localId: "a",
     updatedAt: "old",
-    steps: [{ status: "Untested", currentStatus: "Untested" }]
+    steps: [{ status: "Untested", currentStatus: "Untested", localCurrentStatus: "" }]
   }];
 
   const result = applyStepStatusToCase(cases, "a", 0, "Passed", "now");
@@ -330,6 +330,7 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   assert.equal(result.changed, 1);
   assert.equal(cases[0].steps[0].status, "Untested");
   assert.equal(cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(cases[0].steps[0].localCurrentStatus, "Passed");
   assert.equal(cases[0].updatedAt, "now");
 });
 

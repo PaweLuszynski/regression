@@ -93,6 +93,7 @@ test("XLSX edit round-trips through CSV export/import while preserving supported
   importedRun.cases[0].localDefects = "BUG-301";
   importedRun.cases[0].localEvidence = "screenshot.png";
   importedRun.cases[0].steps[0].currentStatus = "Blocked";
+  importedRun.cases[0].steps[0].localCurrentStatus = "Blocked";
 
   const csv = buildCsvExport(importedRun);
   const restoredRun = parseRunProgressCsv(csv, { sourceFileName: "restored.csv" });
@@ -111,6 +112,7 @@ test("XLSX edit round-trips through CSV export/import while preserving supported
   assert.equal(restoredRun.cases[0].rawRow.Comment, "Imported comment");
   assert.equal(restoredRun.cases[0].steps[0].status, "Untested");
   assert.equal(restoredRun.cases[0].steps[0].currentStatus, "Blocked");
+  assert.equal(restoredRun.cases[0].steps[0].localCurrentStatus, "Blocked");
 });
 
 const headers = [

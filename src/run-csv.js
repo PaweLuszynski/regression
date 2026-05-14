@@ -193,7 +193,10 @@ function applyLocalStepStatuses(stepRows, serializedStatuses) {
   }
   return stepRows.map((row, index) => ({
     ...row,
-    currentStatus: index < statuses.length ? normalizeStatus(statuses[index]) : row.currentStatus
+    localCurrentStatus: index < statuses.length ? normalizeStatus(statuses[index]) : "",
+    currentStatus: index < statuses.length
+      ? (normalizeStatus(statuses[index]) || row.currentStatus || row.status)
+      : row.currentStatus
   }));
 }
 
