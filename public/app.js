@@ -1,4 +1,4 @@
-import { classifyXlsxImportResponse } from "./import-flow.js";
+import { classifyXlsxImportResponse, shouldSkipRecoveryForProgressImport } from "./import-flow.js";
 import { buildCsvExport } from "./run-export.js";
 import {
   appendNoteToCases,
@@ -11,6 +11,7 @@ import {
   getNextCaseId,
   getNextSavedRunIdAfterDeletion,
   getStatusColor,
+  getEffectiveStepStatus,
   getVisibleCaseOrder,
   getRunStatuses,
   groupCasesBySection,
@@ -272,7 +273,12 @@ async function importJsonRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "JSON restore failed.");
   }
-  const recoveryAction = setRun(payload.run);
+  const importPayload = { ...payload, importType: "json" };
+  const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
+  if (skipRecovery) {
+    clearUnsavedRun(payload.run.id);
+  }
+  const recoveryAction = setRun(payload.run, { skipRecovery });
   if (recoveryAction === "none") {
     showMessage(payload.message, "success");
   }
@@ -297,7 +303,12 @@ async function importCsvRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "CSV restore failed.");
   }
-  const recoveryAction = setRun(payload.run);
+  const importPayload = { ...payload, importType: "csv" };
+  const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
+  if (skipRecovery) {
+    clearUnsavedRun(payload.run.id);
+  }
+  const recoveryAction = setRun(payload.run, { skipRecovery });
   if (recoveryAction === "none") {
     showMessage(payload.message, "success");
   }
@@ -1069,7 +1080,7 @@ function createStepStatusEditor(testCase, stepIndex, row) {
     option.textContent = status;
     select.append(option);
   }
-  select.value = row.currentStatus || row.status || "";
+  select.value = getEffectiveStepStatus(row);
   select.title = `Step ${stepIndex + 1} status`;
   select.setAttribute("aria-label", `Step ${stepIndex + 1} status`);
   select.addEventListener("change", () => {

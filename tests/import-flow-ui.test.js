@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { classifyXlsxImportResponse } from "../public/import-flow.js";
+import { classifyXlsxImportResponse, shouldSkipRecoveryForProgressImport } from "../public/import-flow.js";
 
 test("classifyXlsxImportResponse keeps worksheet selection as a visible prompt", () => {
   const result = classifyXlsxImportResponse(409, {
@@ -68,4 +68,11 @@ test("classifyXlsxImportResponse allows explicit resume success to continue", ()
 
   assert.equal(result.kind, "success");
   assert.equal(result.payload, payload);
+});
+
+test("shouldSkipRecoveryForProgressImport skips browser recovery for restored CSV runs", () => {
+  assert.equal(shouldSkipRecoveryForProgressImport({
+    run: { id: "R30_Worksheet", cases: [] },
+    importType: "csv"
+  }), true);
 });

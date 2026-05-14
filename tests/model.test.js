@@ -14,6 +14,7 @@ import {
   getNextCaseId,
   getRunStatuses,
   getStatusColor,
+  getEffectiveStepStatus,
   groupCasesBySection,
   normalizeRun,
   resolveUnsavedRunRecovery,
@@ -513,6 +514,19 @@ test("normalizeRun preserves blank local step status when no imported step statu
 
   assert.equal(run.cases[0].steps[0].status, "");
   assert.equal(run.cases[0].steps[0].currentStatus, "");
+});
+
+test("getEffectiveStepStatus returns the UI-visible local step override", () => {
+  assert.equal(getEffectiveStepStatus({
+    status: "Untested",
+    localCurrentStatus: "Passed",
+    currentStatus: "Passed"
+  }), "Passed");
+  assert.equal(getEffectiveStepStatus({
+    status: "Untested",
+    localCurrentStatus: "",
+    currentStatus: "Untested"
+  }), "Untested");
 });
 
 test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {

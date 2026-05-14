@@ -60,3 +60,7 @@ export function classifyXlsxImportResponse(responseStatus, payload, options = {}
     payload
   };
 }
+
+export function shouldSkipRecoveryForProgressImport(payload) {
+  return Boolean(payload?.run?.id && ["csv", "json"].includes(String(payload.importType || "").toLowerCase()));
+}

@@ -118,6 +118,10 @@ export function normalizeStepRows(stepRows, availableStatuses = statuses) {
   }).filter((row) => row.step || row.expectedResult || row.status || row.currentStatus || row.localCurrentStatus || row.additionalInfo || row.references);
 }
 
+export function getEffectiveStepStatus(row) {
+  return String(row?.currentStatus || row?.localCurrentStatus || row?.status || "");
+}
+
 export function collectCaseStatuses(cases) {
   const collected = [];
   for (const testCase of Array.isArray(cases) ? cases : []) {
