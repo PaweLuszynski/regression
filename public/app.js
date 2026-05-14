@@ -232,12 +232,12 @@ async function importXlsxRun(file, options = {}) {
   const payload = await response.json();
   const importResult = classifyXlsxImportResponse(response.status, payload, options);
   if (importResult.kind === "prompt") {
+    clearMessage();
     setImportPrompt({
       ...importResult.prompt,
       file,
       options
     });
-    showMessage(importResult.prompt.message || "Choose how to continue with this import.", "warning");
     return;
   }
   if (importResult.kind === "error") {
@@ -324,13 +324,16 @@ function renderImportPrompt() {
     return;
   }
 
+  elements.importPrompt.dataset.promptType = prompt.type;
+
   const header = document.createElement("div");
   header.className = "import-prompt-header";
   const copy = document.createElement("div");
   copy.className = "import-prompt-copy";
   copy.append(
+    textElement("span", prompt.type === "worksheet-selection" ? "Import setup" : "Import decision", "import-prompt-eyebrow"),
     textElement("h2", prompt.type === "worksheet-selection" ? "Choose worksheet to import" : "Saved local progress already exists"),
-    textElement("p", prompt.message || "")
+    textElement("p", prompt.message || "", "import-prompt-lead")
   );
   header.append(copy);
   elements.importPrompt.append(header);
@@ -346,6 +349,7 @@ function renderImportPrompt() {
 function renderWorksheetSelectionPrompt(prompt) {
   const wrapper = document.createElement("div");
   wrapper.className = "import-prompt-copy";
+  wrapper.append(textElement("p", "Select the worksheet you want to import. Standard one-sheet exports continue automatically, but multi-sheet workbooks need an explicit choice.", "import-prompt-detail"));
   const field = document.createElement("label");
   field.className = "import-prompt-field";
   field.append(textElement("span", "Worksheet"));
@@ -394,13 +398,16 @@ function renderExistingProgressPrompt(prompt) {
     ["Worksheet", summary.sheetName || "Unknown"],
     ["Cases", summary.caseCount || 0]
   ]) {
-    summaryList.append(textElement("dt", label), textElement("dd", String(value)));
+    const item = document.createElement("div");
+    item.className = "import-prompt-summary-item";
+    item.append(textElement("dt", label), textElement("dd", String(value)));
+    summaryList.append(item);
   }
   wrapper.append(summaryList);
-  wrapper.append(textElement("p", "Resume keeps your saved local statuses, notes, defects, evidence, and step progress. Replace discards saved local progress for this run and uses the newly imported workbook state."));
+  wrapper.append(textElement("p", "Resume keeps your saved local statuses, notes, defects, evidence, and step progress. Replace discards the saved local snapshot for this run and uses the newly imported workbook state.", "import-prompt-detail"));
 
   if (prompt.confirmReplace) {
-    wrapper.append(textElement("div", "Confirm replace: this will overwrite the saved local run snapshot for this run only. Source XLSX files are not deleted.", "import-prompt-confirm"));
+    wrapper.append(textElement("div", "Confirm replace: this overwrites the saved local run snapshot for this run only. Source XLSX files are not deleted.", "import-prompt-confirm"));
   }
 
   const actions = document.createElement("div");
@@ -461,7 +468,6 @@ function requestReplaceConfirmation() {
   }
   state.pendingImportPrompt.confirmReplace = true;
   renderImportPrompt();
-  showMessage("Confirm before replacing saved local progress.", "warning");
 }
 
 function cancelReplaceConfirmation() {
@@ -1628,6 +1634,12 @@ function showMessage(text, type) {
   elements.message.hidden = false;
   elements.message.textContent = text;
   elements.message.className = `message ${type}`;
+}
+
+function clearMessage() {
+  elements.message.hidden = true;
+  elements.message.textContent = "";
+  elements.message.className = "message";
 }
 
 function setSaveState(type, text) {
