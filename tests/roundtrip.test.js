@@ -115,6 +115,51 @@ test("XLSX edit round-trips through CSV export/import while preserving supported
   assert.equal(restoredRun.cases[0].steps[0].localCurrentStatus, "Blocked");
 });
 
+test("CSV round-trip preserves plain newline-separated step rows and visible local step statuses", () => {
+  const csv = buildCsvExport({
+    id: "R302_Worksheet",
+    runId: "R302",
+    runName: "Round Trip Run",
+    sheetName: "Worksheet",
+    sourceFileName: "roundtrip.csv",
+    columns: [
+      { name: "Steps (Step)", key: "Steps (Step)" },
+      { name: "Steps (Expected Result)", key: "Steps (Expected Result)" },
+      { name: "Steps (Status)", key: "Steps (Status)" }
+    ],
+    cases: [
+      {
+        testId: "T302",
+        caseId: "C302",
+        title: "Plain step export",
+        section: "Checkout",
+        sectionHierarchy: "Suite > Checkout",
+        originalStatus: "Untested",
+        currentStatus: "In test",
+        stepsStep: "First step\nSecond step",
+        stepsExpectedResult: "First expected\nSecond expected",
+        stepsStatus: "Untested\nUntested",
+        steps: [
+          { step: "First step", expectedResult: "First expected", status: "Untested", currentStatus: "Passed", localCurrentStatus: "Passed" },
+          { step: "Second step", expectedResult: "Second expected", status: "Untested", currentStatus: "Failed", localCurrentStatus: "Failed" }
+        ],
+        rawRow: {
+          "Steps (Step)": "First step\nSecond step",
+          "Steps (Expected Result)": "First expected\nSecond expected",
+          "Steps (Status)": "Untested\nUntested"
+        }
+      }
+    ]
+  });
+
+  const restoredRun = parseRunProgressCsv(csv, { sourceFileName: "restored.csv" });
+  assert.equal(restoredRun.cases[0].steps.length, 2);
+  assert.equal(restoredRun.cases[0].steps[0].step, "First step");
+  assert.equal(restoredRun.cases[0].steps[1].step, "Second step");
+  assert.equal(restoredRun.cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(restoredRun.cases[0].steps[1].currentStatus, "Failed");
+});
+
 const headers = [
   "ID",
   "Title",

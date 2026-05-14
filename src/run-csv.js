@@ -82,7 +82,7 @@ export function normalizeRestoredCsvRun(headers, dataRows, options = {}) {
     const currentStatus = normalizeStatus(valueOrEmpty(getField(rawRow, "currentStatus")) || "Untested");
     const originalStatusRaw = valueOrEmpty(getField(rawRow, "originalStatus"));
     const originalStatus = normalizeStatus(originalStatusRaw || currentStatus || "Untested");
-    const importedStepRows = parseSteps(rawRow, { availableStatuses: LOCAL_STATUSES });
+    const importedStepRows = parseCsvStepRows(rawRow);
     const steps = applyLocalStepStatuses(
       normalizeStepRows(importedStepRows, LOCAL_STATUSES),
       valueOrEmpty(getField(rawRow, "localStepStatuses"))
@@ -206,6 +206,68 @@ function splitLocalStepStatuses(value) {
     return [];
   }
   return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n").map((part) => part.trim());
+}
+
+function parseCsvStepRows(rawRow) {
+  const parsedRows = parseSteps(rawRow, { availableStatuses: LOCAL_STATUSES });
+  const fallbackRows = alignPlainLineStepRows(rawRow);
+  if (shouldPreferPlainLineRows(parsedRows, fallbackRows)) {
+    return fallbackRows;
+  }
+  return parsedRows;
+}
+
+function alignPlainLineStepRows(rawRow) {
+  const stepLines = splitPlainStepLines(rawRow["Steps (Step)"]);
+  const expectedLines = splitPlainStepLines(rawRow["Steps (Expected Result)"]);
+  const statusLines = splitLocalStepStatuses(rawRow["Steps (Status)"]).map((status) => normalizeStatus(status));
+  const additionalLines = splitPlainStepLines(rawRow["Steps (Additional Info)"]);
+  const referenceLines = splitPlainStepLines(rawRow["Steps (References)"]);
+  const rowCount = Math.max(
+    stepLines.length,
+    expectedLines.length,
+    statusLines.length,
+    additionalLines.length,
+    referenceLines.length
+  );
+  if (rowCount <= 1) {
+    return [];
+  }
+  return Array.from({ length: rowCount }, (_, index) => ({
+    step: stepLines[index] || "",
+    expectedResult: expectedLines[index] || "",
+    status: statusLines[index] || "",
+    additionalInfo: additionalLines[index] || "",
+    references: referenceLines[index] || ""
+  })).filter((row) => row.step || row.expectedResult || row.status || row.additionalInfo || row.references);
+}
+
+function splitPlainStepLines(value) {
+  const text = String(value ?? "").replaceAll("\r\n", "\n").replaceAll("\r", "\n").trim();
+  if (!text) {
+    return [];
+  }
+  return text.split("\n").map((part) => part.trim()).filter(Boolean);
+}
+
+function shouldPreferPlainLineRows(parsedRows, fallbackRows) {
+  if (fallbackRows.length === 0) {
+    return false;
+  }
+  if (fallbackRows.length > parsedRows.length) {
+    return true;
+  }
+  if (fallbackRows.length !== parsedRows.length) {
+    return false;
+  }
+  return countMeaningfulStepTexts(fallbackRows) > countMeaningfulStepTexts(parsedRows);
+}
+
+function countMeaningfulStepTexts(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => {
+    const text = String(row?.step || "");
+    return Boolean(text.trim()) && !text.includes("\n");
+  }).length;
 }
 
 function firstNonEmpty(values) {
