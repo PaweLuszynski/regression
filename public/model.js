@@ -33,6 +33,9 @@ export const caseListColumnMinimums = {
   status: 120
 };
 
+export const keyboardResizeStep = 24;
+export const keyboardResizeStepLarge = 72;
+
 const statusColors = {
   Passed: { className: "status-passed", color: "#16803c", label: "Passed" },
   Untested: { className: "status-untested", color: "#7b8794", label: "Untested" },
@@ -291,6 +294,14 @@ export function resizeCaseListColumns(widths, column, deltaX) {
   return sanitizeCaseListColumns(next);
 }
 
+export function getKeyboardResizeDelta(key, { shiftKey = false } = {}) {
+  if (key !== "ArrowLeft" && key !== "ArrowRight") {
+    return 0;
+  }
+  const amount = shiftKey ? keyboardResizeStepLarge : keyboardResizeStep;
+  return key === "ArrowLeft" ? -amount : amount;
+}
+
 export function applyStatusToCase(cases, localId, status, updatedAt = new Date().toISOString()) {
   return applyStatusToCases(cases, [localId], status, updatedAt);
 }
@@ -328,6 +339,20 @@ export function getNextCaseId(currentCaseId, visibleCaseIds) {
     return visibleCaseIds[0];
   }
   return visibleCaseIds[index + 1] || null;
+}
+
+export function getAdjacentVisibleCaseId(currentCaseId, visibleCaseIds, direction = 1) {
+  const ids = Array.isArray(visibleCaseIds) ? visibleCaseIds.filter(Boolean) : [];
+  if (ids.length === 0) {
+    return null;
+  }
+  const step = direction < 0 ? -1 : 1;
+  const index = ids.indexOf(currentCaseId);
+  if (index < 0) {
+    return step < 0 ? ids[ids.length - 1] : ids[0];
+  }
+  const nextIndex = Math.max(0, Math.min(ids.length - 1, index + step));
+  return ids[nextIndex] || null;
 }
 
 export function groupCasesBySection(cases) {

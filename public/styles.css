@@ -608,6 +608,12 @@ body.resizing-panels .resize-handle::before {
   background: var(--accent);
 }
 
+.resize-handle:focus-visible,
+.case-column-resizer:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .pane-heading {
   border-bottom: 1px solid var(--border);
   margin: -10px -10px 10px;
@@ -654,6 +660,13 @@ body.resizing-panels .resize-handle::before {
 .tree-folder-button:hover,
 .tree-test-button:hover,
 .tree-test-button.selected {
+  background: #edf7fa;
+}
+
+.tree-folder-button:focus-visible,
+.tree-test-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
   background: #edf7fa;
 }
 

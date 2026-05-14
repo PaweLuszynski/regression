@@ -7,8 +7,10 @@ import {
   buildTreeFromCases,
   caseListColumnDefaults,
   calculateRunStats,
+  getAdjacentVisibleCaseId,
   getNextCaseId,
   getNextSavedRunIdAfterDeletion,
+  getKeyboardResizeDelta,
   getStatusColor,
   getVisibleCaseOrder,
   getRunStatuses,
@@ -133,10 +135,12 @@ window.addEventListener("mouseup", stopResizingCaseListColumn);
 
 for (const handle of document.querySelectorAll("[data-resize-handle]")) {
   handle.addEventListener("mousedown", startResizingPanels);
+  handle.addEventListener("keydown", resizePanelsWithKeyboard);
 }
 
 for (const handle of document.querySelectorAll("[data-case-column]")) {
   handle.addEventListener("mousedown", startResizingCaseListColumn);
+  handle.addEventListener("keydown", resizeCaseListColumnWithKeyboard);
 }
 
 applyPanelWidths();
@@ -550,6 +554,13 @@ function titleElement(run) {
   return wrapper;
 }
 
+function cssEscape(value) {
+  if (globalThis.CSS?.escape) {
+    return globalThis.CSS.escape(value);
+  }
+  return String(value).replace(/["\\]/g, "\\$&");
+}
+
 function applySavedRunsSectionState(runs = state.savedRuns) {
   const count = Array.isArray(runs) ? runs.length : 0;
   const countLabel = `${count} saved local ${count === 1 ? "run" : "runs"}`;
@@ -716,6 +727,21 @@ function render(options = {}) {
         selectedRow.scrollIntoView({ block: "nearest" });
       }
     }
+
+    if (options.focusSelectedRow) {
+      const selectedRow = elements.caseList.querySelector(".case-list-row.selected");
+      if (selectedRow) {
+        selectedRow.focus({ preventScroll: true });
+      }
+    }
+
+    if (options.focusTreeNodeId) {
+      const selector = `[data-tree-node-id="${cssEscape(options.focusTreeNodeId)}"]`;
+      const selectedTreeButton = elements.treeRoot.querySelector(selector);
+      if (selectedTreeButton) {
+        selectedTreeButton.focus({ preventScroll: true });
+      }
+    }
   };
 
   const renderWithCaseScroll = options.preserveScroll ? withCaseListScrollPreserved : runImmediately;
@@ -777,6 +803,7 @@ function renderTreeNode(node) {
     const button = document.createElement("button");
     button.type = "button";
     button.className = "tree-folder-button";
+    button.dataset.treeNodeId = node.id;
     button.title = node.name;
     button.addEventListener("click", () => {
       if (state.expandedFolders.has(node.id)) {
@@ -784,8 +811,9 @@ function renderTreeNode(node) {
       } else {
         state.expandedFolders.add(node.id);
       }
-      render({ preserveScroll: true });
+      render({ preserveScroll: true, focusTreeNodeId: node.id });
     });
+    button.addEventListener("keydown", (event) => handleTreeKeyboardNavigation(event, node));
     button.append(
       textElement("span", isOpen ? "▾" : "▸", "tree-caret"),
       statusDot(node.aggregateStatus),
@@ -807,14 +835,16 @@ function renderTreeNode(node) {
   const button = document.createElement("button");
   button.type = "button";
   button.className = `tree-test-button ${getStatusColor(node.status).className}`;
+  button.dataset.treeNodeId = node.id;
   button.title = [node.testId, node.caseId, node.name].filter(Boolean).join(" · ");
   if (node.localId === state.selectedLocalId) {
     button.classList.add("selected");
   }
   button.addEventListener("click", () => {
     state.selectedLocalId = node.localId;
-    render({ preserveScroll: true });
+    render({ preserveScroll: true, scrollIntoView: true, focusSelectedRow: true, focusTreeNodeId: node.id });
   });
+  button.addEventListener("keydown", (event) => handleTreeKeyboardNavigation(event, node));
   button.append(
     statusDot(node.status),
     textElement("span", node.testId || node.caseId || "", "tree-test-id"),
@@ -865,6 +895,11 @@ function caseListRow(testCase) {
     if (event.target !== row) {
       return;
     }
+    if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveCaseSelectionWithKeyboard(testCase.localId, event.key === "ArrowDown" ? 1 : -1);
+      return;
+    }
     if (event.key !== "Enter" && event.key !== " ") {
       return;
     }
@@ -892,6 +927,57 @@ function caseListRow(testCase) {
     statusBadge(testCase.currentStatus)
   );
   return row;
+}
+
+function moveCaseSelectionWithKeyboard(currentLocalId, direction) {
+  const nextLocalId = getAdjacentVisibleCaseId(
+    currentLocalId,
+    filteredCases().map((testCase) => testCase.localId),
+    direction
+  );
+  if (!nextLocalId || nextLocalId === currentLocalId) {
+    return;
+  }
+  state.selectedLocalId = nextLocalId;
+  render({ preserveScroll: true, scrollIntoView: true, focusSelectedRow: true });
+}
+
+function handleTreeKeyboardNavigation(event, node) {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    event.preventDefault();
+    focusAdjacentTreeButton(event.currentTarget, event.key === "ArrowDown" ? 1 : -1);
+    return;
+  }
+
+  if (node.type !== "folder") {
+    return;
+  }
+
+  if (event.key === "ArrowRight" && !state.expandedFolders.has(node.id)) {
+    event.preventDefault();
+    state.expandedFolders.add(node.id);
+    render({ preserveScroll: true, focusTreeNodeId: node.id });
+    return;
+  }
+
+  if (event.key === "ArrowLeft" && state.expandedFolders.has(node.id)) {
+    event.preventDefault();
+    state.expandedFolders.delete(node.id);
+    render({ preserveScroll: true, focusTreeNodeId: node.id });
+  }
+}
+
+function focusAdjacentTreeButton(button, direction) {
+  const treeButtons = [...elements.treeRoot.querySelectorAll("button[data-tree-node-id]")];
+  const index = treeButtons.indexOf(button);
+  if (index < 0) {
+    return;
+  }
+  const nextButton = treeButtons[index + direction];
+  if (!nextButton) {
+    return;
+  }
+  nextButton.focus({ preventScroll: false });
 }
 
 function renderDetail(testCase) {
@@ -1380,6 +1466,18 @@ function startResizingPanels(event) {
   event.preventDefault();
 }
 
+function resizePanelsWithKeyboard(event) {
+  const handle = event.currentTarget.dataset.resizeHandle;
+  const deltaX = getKeyboardResizeDelta(event.key, { shiftKey: event.shiftKey });
+  if (!handle || !deltaX) {
+    return;
+  }
+  event.preventDefault();
+  state.panelWidths = resizePanelWidths(state.panelWidths, handle, deltaX);
+  applyPanelWidths();
+  savePanelWidths();
+}
+
 function resizePanels(event) {
   if (!state.activeResize) {
     return;
@@ -1417,6 +1515,19 @@ function startResizingCaseListColumn(event) {
   event.stopPropagation();
 }
 
+function resizeCaseListColumnWithKeyboard(event) {
+  const column = event.currentTarget.dataset.caseColumn;
+  const deltaX = getKeyboardResizeDelta(event.key, { shiftKey: event.shiftKey });
+  if (!column || !deltaX) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  state.caseListColumns = resizeCaseListColumns(state.caseListColumns, column, deltaX);
+  applyCaseListColumns();
+  saveCaseListColumns();
+}
+
 function resizeCaseListColumn(event) {
   if (!state.activeColumnResize) {
     return;
@@ -1444,6 +1555,12 @@ function applyPanelWidths() {
   elements.contentGrid.style.setProperty("--tree-width", `${state.panelWidths.tree}px`);
   elements.contentGrid.style.setProperty("--list-width", `${state.panelWidths.list}px`);
   elements.contentGrid.style.setProperty("--detail-width", `${state.panelWidths.detail}px`);
+  for (const handle of document.querySelectorAll("[data-resize-handle]")) {
+    const resizeHandle = handle.dataset.resizeHandle;
+    const value = resizeHandle === "tree-list" ? state.panelWidths.tree : state.panelWidths.list;
+    handle.setAttribute("aria-valuenow", String(value));
+    handle.setAttribute("aria-valuetext", `${value} pixels`);
+  }
 }
 
 function applyCaseListColumns() {
@@ -1451,6 +1568,15 @@ function applyCaseListColumns() {
   elements.tableWrap.style.setProperty("--case-id-col", `${state.caseListColumns.id}px`);
   elements.tableWrap.style.setProperty("--case-title-col", `${state.caseListColumns.title}px`);
   elements.tableWrap.style.setProperty("--case-status-col", `${state.caseListColumns.status}px`);
+  for (const handle of document.querySelectorAll("[data-case-column]")) {
+    const column = handle.dataset.caseColumn;
+    if (!column) {
+      continue;
+    }
+    const value = state.caseListColumns[column];
+    handle.setAttribute("aria-valuenow", String(value));
+    handle.setAttribute("aria-valuetext", `${value} pixels`);
+  }
 }
 
 function resetLayout() {

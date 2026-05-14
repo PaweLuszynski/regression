@@ -8,6 +8,8 @@ import {
   applyStatusToCases,
   buildTreeFromCases,
   calculateRunStats,
+  getAdjacentVisibleCaseId,
+  getKeyboardResizeDelta,
   getNextSavedRunIdAfterDeletion,
   latestRunTimestamp,
   getVisibleCaseOrder,
@@ -290,6 +292,24 @@ test("resizeCaseListColumns updates one column while preserving other widths", (
     resizeCaseListColumns({ id: 86, title: 520, status: 150 }, "unknown", 80),
     { id: 86, title: 520, status: 150 }
   );
+});
+
+test("getKeyboardResizeDelta uses arrows only and supports larger shift steps", () => {
+  assert.equal(getKeyboardResizeDelta("ArrowLeft"), -24);
+  assert.equal(getKeyboardResizeDelta("ArrowRight"), 24);
+  assert.equal(getKeyboardResizeDelta("ArrowRight", { shiftKey: true }), 72);
+  assert.equal(getKeyboardResizeDelta("Enter"), 0);
+});
+
+test("getAdjacentVisibleCaseId returns neighboring visible cases without falling out of bounds", () => {
+  const ids = ["a", "b", "c"];
+
+  assert.equal(getAdjacentVisibleCaseId("b", ids, 1), "c");
+  assert.equal(getAdjacentVisibleCaseId("b", ids, -1), "a");
+  assert.equal(getAdjacentVisibleCaseId("a", ids, -1), "a");
+  assert.equal(getAdjacentVisibleCaseId("missing", ids, 1), "a");
+  assert.equal(getAdjacentVisibleCaseId("missing", ids, -1), "c");
+  assert.equal(getAdjacentVisibleCaseId("a", [], 1), null);
 });
 
 test("applyStatusToCase updates current status and timestamp without changing original status", () => {
