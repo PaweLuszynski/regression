@@ -812,8 +812,7 @@ function renderTreeNode(node) {
     button.classList.add("selected");
   }
   button.addEventListener("click", () => {
-    state.selectedLocalId = node.localId;
-    render({ preserveScroll: true });
+    selectCaseFromTree(node.localId);
   });
   button.append(
     statusDot(node.status),
@@ -822,6 +821,16 @@ function renderTreeNode(node) {
   );
   item.append(button);
   return item;
+}
+
+function selectCaseFromTree(localId) {
+  state.selectedLocalId = localId;
+  const visibleLocalIds = filteredCases().map((testCase) => testCase.localId);
+  const isVisibleInCaseList = visibleLocalIds.includes(localId);
+  render({ preserveScroll: true, scrollIntoView: isVisibleInCaseList });
+  if (!isVisibleInCaseList) {
+    showMessage("Selected test case is hidden by the current filters, so the test list did not scroll.", "warning");
+  }
 }
 
 function renderCaseList(groups) {
