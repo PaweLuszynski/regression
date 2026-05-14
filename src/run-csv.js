@@ -1,6 +1,6 @@
 import path from "node:path";
 
-import { normalizeRun } from "../public/model.js";
+import { normalizeRun, normalizeStepRows, parseSteps } from "../public/model.js";
 import { createRunStorageKey, LOCAL_STATUSES } from "./parser.js";
 
 const REQUIRED_COLUMN_GROUPS = [
@@ -20,11 +20,29 @@ const FIELD_ALIASES = {
   localNotes: ["Local Notes", "localNotes", "Notes"],
   localDefects: ["Local Defects", "localDefects", "Defects"],
   localEvidence: ["Local Evidence", "localEvidence", "Evidence"],
+  localStepStatuses: ["Local Step Statuses", "localStepStatuses"],
   updatedAt: ["Updated At", "updatedAt"],
   runId: ["Run ID", "runId"],
   runName: ["Run Name", "runName"],
   sheetName: ["Sheet Name", "sheetName"],
-  sourceFileName: ["Source File Name", "sourceFileName"]
+  sourceFileName: ["Source File Name", "sourceFileName"],
+  assignedTo: ["Assigned To", "assignedTo"],
+  priority: ["Priority", "priority"],
+  type: ["Type", "type"],
+  template: ["Template", "template"],
+  references: ["References", "references"],
+  testedBy: ["Tested By", "testedBy"],
+  testedOn: ["Tested On", "testedOn"],
+  preconditions: ["Preconditions", "preconditions"],
+  expectedResult: ["Expected Result", "expectedResult"],
+  stepsCombined: ["Steps", "stepsCombined"],
+  stepsStep: ["Steps (Step)", "stepsStep"],
+  stepsExpectedResult: ["Steps (Expected Result)", "stepsExpectedResult"],
+  stepsStatus: ["Steps (Status)", "stepsStatus"],
+  testCaseLabels: ["Test Case Labels", "testCaseLabels"],
+  testLabels: ["Test Labels", "testLabels"],
+  importedComment: ["Comment", "importedComment"],
+  importedDefects: ["Defects", "importedDefects"]
 };
 
 export function parseRunProgressCsv(text, options = {}) {
@@ -64,36 +82,47 @@ export function normalizeRestoredCsvRun(headers, dataRows, options = {}) {
     const currentStatus = normalizeStatus(valueOrEmpty(getField(rawRow, "currentStatus")) || "Untested");
     const originalStatusRaw = valueOrEmpty(getField(rawRow, "originalStatus"));
     const originalStatus = normalizeStatus(originalStatusRaw || currentStatus || "Untested");
+    const importedStepRows = parseSteps(rawRow, { availableStatuses: LOCAL_STATUSES });
+    const steps = applyLocalStepStatuses(
+      normalizeStepRows(importedStepRows, LOCAL_STATUSES),
+      valueOrEmpty(getField(rawRow, "localStepStatuses"))
+    );
+    const explicitStep = valueOrEmpty(getField(rawRow, "stepsStep"));
+    const explicitExpected = valueOrEmpty(getField(rawRow, "stepsExpectedResult"));
+    const fallbackSteps = valueOrEmpty(getField(rawRow, "stepsCombined"));
+    const stepsCombined = explicitStep || explicitExpected
+      ? [explicitStep, explicitExpected].filter(Boolean).join("\n\nExpected Result:\n")
+      : fallbackSteps;
 
     return {
       localId: testId || caseId || `row-${index + 2}`,
       testId,
       caseId,
       title: valueOrEmpty(getField(rawRow, "title")),
-      assignedTo: "",
-      priority: "",
+      assignedTo: valueOrEmpty(getField(rawRow, "assignedTo")),
+      priority: valueOrEmpty(getField(rawRow, "priority")),
       section: valueOrEmpty(getField(rawRow, "section")),
       sectionHierarchy: valueOrEmpty(getField(rawRow, "sectionHierarchy")),
-      type: "",
-      template: "",
+      type: valueOrEmpty(getField(rawRow, "type")),
+      template: valueOrEmpty(getField(rawRow, "template")),
       originalStatus,
       currentStatus,
-      importedComment: "",
+      importedComment: valueOrEmpty(getField(rawRow, "importedComment")),
       localNotes: valueOrEmpty(getField(rawRow, "localNotes")),
-      importedDefects: "",
+      importedDefects: valueOrEmpty(getField(rawRow, "importedDefects")),
       localDefects: valueOrEmpty(getField(rawRow, "localDefects")),
-      references: "",
+      references: valueOrEmpty(getField(rawRow, "references")),
       localEvidence: valueOrEmpty(getField(rawRow, "localEvidence")),
-      preconditions: "",
-      expectedResult: "",
-      stepsCombined: "",
-      stepsStep: "",
-      stepsExpectedResult: "",
-      stepsStatus: "",
-      steps: [],
-      testedBy: "",
-      testedOn: "",
-      testCaseLabels: "",
+      preconditions: valueOrEmpty(getField(rawRow, "preconditions")),
+      expectedResult: valueOrEmpty(getField(rawRow, "expectedResult")),
+      stepsCombined,
+      stepsStep: explicitStep,
+      stepsExpectedResult: explicitExpected,
+      stepsStatus: valueOrEmpty(getField(rawRow, "stepsStatus")),
+      steps,
+      testedBy: valueOrEmpty(getField(rawRow, "testedBy")),
+      testedOn: valueOrEmpty(getField(rawRow, "testedOn")),
+      testCaseLabels: valueOrEmpty(getField(rawRow, "testCaseLabels")),
       updatedAt: valueOrEmpty(getField(rawRow, "updatedAt")) || importedAt,
       rawRow
     };
@@ -132,7 +161,7 @@ function rowToObject(headers, row, index) {
   const rawRow = {};
   for (let columnIndex = 0; columnIndex < headers.length; columnIndex += 1) {
     const header = headers[columnIndex] || `Column ${columnIndex + 1}`;
-    rawRow[header] = String(row[columnIndex] ?? "").trim();
+    rawRow[header] = String(row[columnIndex] ?? "");
   }
   rawRow.__rowNumber = String(index + 2);
   return rawRow;
@@ -152,6 +181,28 @@ function getField(row, field) {
 function normalizeStatus(status) {
   const lowered = String(status || "").trim().toLowerCase();
   return LOCAL_STATUSES.find((candidate) => candidate.toLowerCase() === lowered) || valueOrEmpty(status);
+}
+
+function applyLocalStepStatuses(stepRows, serializedStatuses) {
+  if (!Array.isArray(stepRows) || stepRows.length === 0) {
+    return stepRows;
+  }
+  const statuses = splitLocalStepStatuses(serializedStatuses);
+  if (statuses.length === 0) {
+    return stepRows;
+  }
+  return stepRows.map((row, index) => ({
+    ...row,
+    currentStatus: index < statuses.length ? normalizeStatus(statuses[index]) : row.currentStatus
+  }));
+}
+
+function splitLocalStepStatuses(value) {
+  const text = String(value ?? "");
+  if (!text) {
+    return [];
+  }
+  return text.replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n").map((part) => part.trim());
 }
 
 function firstNonEmpty(values) {

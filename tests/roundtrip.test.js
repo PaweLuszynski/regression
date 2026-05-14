@@ -57,7 +57,7 @@ test("XLSX edit round-trips through JSON export/import while preserving local pr
   assert.equal(restoredRun.cases[0].rawRow.Comment, "Imported comment");
 });
 
-test("XLSX edit round-trips through CSV export/import while preserving supported local progress", async () => {
+test("XLSX edit round-trips through CSV export/import while preserving supported local progress and key raw fields", async () => {
   const importedRun = await parseTestRailRunFromBuffer(createWorkbook([
     headers,
     [
@@ -79,8 +79,8 @@ test("XLSX edit round-trips through CSV export/import while preserving supported
       "Suite > Checkout",
       "Untested",
       "",
-      "",
-      "",
+      "Untested",
+      "1. Confirmation shown",
       "Test Case",
       "",
       "",
@@ -92,6 +92,7 @@ test("XLSX edit round-trips through CSV export/import while preserving supported
   importedRun.cases[0].localNotes = "CSV note";
   importedRun.cases[0].localDefects = "BUG-301";
   importedRun.cases[0].localEvidence = "screenshot.png";
+  importedRun.cases[0].steps[0].currentStatus = "Blocked";
 
   const csv = buildCsvExport(importedRun);
   const restoredRun = parseRunProgressCsv(csv, { sourceFileName: "restored.csv" });
@@ -102,6 +103,14 @@ test("XLSX edit round-trips through CSV export/import while preserving supported
   assert.equal(restoredRun.cases[0].localDefects, "BUG-301");
   assert.equal(restoredRun.cases[0].localEvidence, "screenshot.png");
   assert.equal(restoredRun.runId, "R301");
+  assert.equal(restoredRun.cases[0].priority, "High");
+  assert.equal(restoredRun.cases[0].assignedTo, "QA User");
+  assert.equal(restoredRun.cases[0].preconditions, "User exists");
+  assert.equal(restoredRun.cases[0].importedComment, "Imported comment");
+  assert.equal(restoredRun.cases[0].importedDefects, "BUG-0");
+  assert.equal(restoredRun.cases[0].rawRow.Comment, "Imported comment");
+  assert.equal(restoredRun.cases[0].steps[0].status, "Untested");
+  assert.equal(restoredRun.cases[0].steps[0].currentStatus, "Blocked");
 });
 
 const headers = [
