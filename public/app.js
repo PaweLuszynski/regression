@@ -1,3 +1,4 @@
+import { classifyXlsxImportResponse } from "./import-flow.js";
 import {
   appendNoteToCases,
   applyStepStatusToCase,
@@ -229,41 +230,28 @@ async function importXlsxRun(file, options = {}) {
     body: await file.arrayBuffer()
   });
   const payload = await response.json();
-  if (response.status === 409 && payload.worksheetSelectionRequired) {
+  const importResult = classifyXlsxImportResponse(response.status, payload, options);
+  if (importResult.kind === "prompt") {
     setImportPrompt({
-      type: "worksheet-selection",
+      ...importResult.prompt,
       file,
-      options,
-      availableSheets: payload.availableSheets || [],
-      selectedSheet: payload.availableSheets?.[0] || "",
-      message: payload.message || "Choose one worksheet to import."
+      options
     });
-    showMessage(payload.message || "Choose one worksheet to import.", "warning");
+    showMessage(importResult.prompt.message || "Choose how to continue with this import.", "warning");
     return;
   }
-  if (response.status === 409 && payload.decisionRequired && payload.reason === "existing-progress") {
-    setImportPrompt({
-      type: "existing-progress",
-      file,
-      options,
-      importedRunSummary: payload.importedRunSummary || {},
-      message: payload.message || "Saved local progress already exists for this run.",
-      confirmReplace: false
-    });
-    showMessage(payload.message || "Choose whether to resume or replace saved local progress.", "warning");
-    return;
-  }
-  if (!response.ok) {
+  if (importResult.kind === "error") {
     clearImportPrompt();
-    throw new Error(payload.error || "Import failed.");
+    throw new Error(importResult.error);
   }
   clearImportPrompt();
-  if (payload.existingProgressReplaced && payload.run?.id) {
-    clearUnsavedRun(payload.run.id);
+  const successPayload = importResult.payload;
+  if (successPayload.existingProgressReplaced && successPayload.run?.id) {
+    clearUnsavedRun(successPayload.run.id);
   }
-  const recoveryAction = setRun(payload.run, { skipRecovery: Boolean(payload.existingProgressReplaced) });
+  const recoveryAction = setRun(successPayload.run, { skipRecovery: Boolean(successPayload.existingProgressReplaced) });
   if (recoveryAction === "none") {
-    showMessage(payload.message, payload.existingProgressFound ? "warning" : "success");
+    showMessage(successPayload.message, successPayload.existingProgressFound ? "warning" : "success");
   }
   await loadSavedRuns();
 }

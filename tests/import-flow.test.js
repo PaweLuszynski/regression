@@ -102,6 +102,7 @@ test("HTTP import requires explicit resume or replace when saved local progress 
     assert.equal(collisionResponse.status, 409);
     assert.equal(collisionPayload.decisionRequired, true);
     assert.equal(collisionPayload.reason, "existing-progress");
+    assert.doesNotMatch(collisionPayload.message, /found and loaded|kept and loaded|did not overwrite/i);
 
     const resumeResponse = await fetch(`${baseUrl}/api/import`, {
       method: "POST",
@@ -114,6 +115,7 @@ test("HTTP import requires explicit resume or replace when saved local progress 
     });
     const resumePayload = await resumeResponse.json();
     assert.equal(resumeResponse.status, 200);
+    assert.match(resumePayload.message, /kept and loaded/i);
     assert.equal(resumePayload.run.cases[0].localNotes, "Keep this progress");
 
     const replaceResponse = await fetch(`${baseUrl}/api/import`, {
