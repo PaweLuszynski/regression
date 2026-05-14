@@ -1,4 +1,5 @@
 import { classifyXlsxImportResponse } from "./import-flow.js";
+import { buildCsvExport } from "./run-export.js";
 import {
   appendNoteToCases,
   applyStepStatusToCase,
@@ -1532,34 +1533,7 @@ function exportCsv() {
     return;
   }
   closeMenus();
-  const fields = [
-    ["Run ID", "runId"],
-    ["Run Name", "runName"],
-    ["Sheet Name", "sheetName"],
-    ["Source File Name", "sourceFileName"],
-    ["ID", "testId"],
-    ["Case ID", "caseId"],
-    ["Title", "title"],
-    ["Section", "section"],
-    ["Section Hierarchy", "sectionHierarchy"],
-    ["Original Status", "originalStatus"],
-    ["Current Status", "currentStatus"],
-    ["Local Notes", "localNotes"],
-    ["Local Defects", "localDefects"],
-    ["Local Evidence", "localEvidence"],
-    ["Updated At", "updatedAt"]
-  ];
-  const rows = [fields.map(([name]) => name).join(",")];
-  for (const testCase of state.run.cases) {
-    rows.push(fields.map(([, field]) => {
-      if (field === "runId") return csvEscape(state.run.runId || "");
-      if (field === "runName") return csvEscape(state.run.runName || "");
-      if (field === "sheetName") return csvEscape(state.run.sheetName || "");
-      if (field === "sourceFileName") return csvEscape(state.run.sourceFileName || "");
-      return csvEscape(testCase[field] || "");
-    }).join(","));
-  }
-  const blob = new Blob([`${rows.join("\n")}\n`], { type: "text/csv" });
+  const blob = new Blob([buildCsvExport(state.run)], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -1767,14 +1741,6 @@ function formatDateTime(value) {
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function csvEscape(value) {
-  const text = String(value);
-  if (/[",\n]/.test(text)) {
-    return `"${text.replaceAll('"', '""')}"`;
-  }
-  return text;
 }
 
 function closeMenus() {
