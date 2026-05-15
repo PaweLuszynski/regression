@@ -81,11 +81,11 @@ test("shouldSkipRecoveryForProgressImport skips browser recovery for restored CS
   }), true);
 });
 
-test("classifyProgressImportResponse keeps JSON and CSV replacement collisions visible", () => {
+test("classifyProgressImportResponse keeps JSON and CSV collisions as resume or replace decisions", () => {
   for (const importType of ["json", "csv"]) {
     const result = classifyProgressImportResponse(409, {
       decisionRequired: true,
-      reason: "replace-progress",
+      reason: "existing-progress",
       importedRunSummary: {
         runName: "Regression Run",
         runId: "R8",
@@ -96,8 +96,9 @@ test("classifyProgressImportResponse keeps JSON and CSV replacement collisions v
     }, importType);
 
     assert.equal(result.kind, "prompt");
-    assert.equal(result.prompt.type, "progress-replace");
+    assert.equal(result.prompt.type, "existing-progress");
     assert.equal(result.prompt.importType, importType);
+    assert.equal(result.prompt.sourceKind, "progress");
     assert.equal(result.prompt.importedRunSummary.runId, "R8");
   }
 });

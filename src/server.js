@@ -145,8 +145,8 @@ async function route(request, response, context) {
 
   if (request.method === "POST" && pathname === "/api/import-json") {
     const existingAction = decodeImportHeader(request.headers["x-import-existing-action"]).toLowerCase();
-    if (existingAction && existingAction !== "replace") {
-      return sendJson(response, 400, { error: "Invalid JSON restore action. Use replace." });
+    if (existingAction && !["resume", "replace"].includes(existingAction)) {
+      return sendJson(response, 400, { error: "Invalid JSON restore action. Use resume or replace." });
     }
 
     let restoredRun;
@@ -161,9 +161,17 @@ async function route(request, response, context) {
       return sendJson(response, 409, {
         decisionRequired: true,
         existingProgressFound: true,
-        reason: "replace-progress",
+        reason: "existing-progress",
         importedRunSummary: summarizeRun(restoredRun),
-        message: "Saved local progress already exists for this run. Confirm before replacing it with this JSON progress file."
+        message: "This run already has saved local progress. Choose whether to keep it or replace it with the imported JSON progress file."
+      });
+    }
+
+    if (existingSavedRun && existingAction === "resume") {
+      return sendJson(response, 200, {
+        run: existingSavedRun.run,
+        existingProgressFound: true,
+        message: "Existing saved progress was kept and loaded."
       });
     }
 
@@ -175,15 +183,15 @@ async function route(request, response, context) {
       run: restoredRun,
       existingProgressReplaced: Boolean(existingSavedRun),
       message: existingSavedRun
-        ? "JSON progress replaced the saved local progress."
+        ? "Saved progress was replaced with the imported JSON progress file."
         : "JSON progress restored and saved locally."
     });
   }
 
   if (request.method === "POST" && pathname === "/api/import-csv") {
     const existingAction = decodeImportHeader(request.headers["x-import-existing-action"]).toLowerCase();
-    if (existingAction && existingAction !== "replace") {
-      return sendJson(response, 400, { error: "Invalid CSV restore action. Use replace." });
+    if (existingAction && !["resume", "replace"].includes(existingAction)) {
+      return sendJson(response, 400, { error: "Invalid CSV restore action. Use resume or replace." });
     }
 
     let restoredRun;
@@ -200,9 +208,17 @@ async function route(request, response, context) {
       return sendJson(response, 409, {
         decisionRequired: true,
         existingProgressFound: true,
-        reason: "replace-progress",
+        reason: "existing-progress",
         importedRunSummary: summarizeRun(restoredRun),
-        message: "Saved local progress already exists for this run. Confirm before replacing it with this CSV progress file."
+        message: "This run already has saved local progress. Choose whether to keep it or replace it with the imported CSV progress file."
+      });
+    }
+
+    if (existingSavedRun && existingAction === "resume") {
+      return sendJson(response, 200, {
+        run: existingSavedRun.run,
+        existingProgressFound: true,
+        message: "Existing saved progress was kept and loaded."
       });
     }
 
@@ -214,7 +230,7 @@ async function route(request, response, context) {
       run: restoredRun,
       existingProgressReplaced: Boolean(existingSavedRun),
       message: existingSavedRun
-        ? "CSV progress replaced the saved local progress."
+        ? "Saved progress was replaced with the imported CSV progress file."
         : "CSV progress restored and saved locally."
     });
   }

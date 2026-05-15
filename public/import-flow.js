@@ -64,14 +64,15 @@ export function classifyXlsxImportResponse(responseStatus, payload, options = {}
 export function classifyProgressImportResponse(responseStatus, payload, importType = "progress") {
   const normalizedType = String(importType || "progress").toLowerCase();
 
-  if (responseStatus === 409 && payload?.decisionRequired && payload?.reason === "replace-progress") {
+  if (responseStatus === 409 && payload?.decisionRequired && payload?.reason === "existing-progress") {
     return {
       kind: "prompt",
       prompt: {
-        type: "progress-replace",
+        type: "existing-progress",
+        sourceKind: "progress",
         importType: normalizedType,
         importedRunSummary: payload.importedRunSummary || summarizeImportedRun(payload.run),
-        message: payload.message || "Saved local progress already exists for this run. Confirm before replacing it.",
+        message: payload.message || `This run already has saved local progress. Choose whether to keep it or replace it with the imported ${normalizedType.toUpperCase()} progress file.`,
         confirmReplace: false
       }
     };

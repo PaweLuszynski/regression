@@ -459,8 +459,8 @@ function renderExistingProgressPrompt(prompt) {
     const replaceButton = document.createElement("button");
     replaceButton.type = "button";
     replaceButton.className = "button-danger";
-    replaceButton.textContent = prompt.type === "progress-replace"
-      ? "Replace saved progress"
+    replaceButton.textContent = isProgressImportPrompt(prompt)
+      ? "Replace with imported progress file"
       : "Replace with imported workbook";
     replaceButton.addEventListener("click", requestReplaceConfirmation);
     actions.append(replaceButton);
@@ -479,15 +479,15 @@ function promptEyebrow(prompt) {
   if (prompt.type === "worksheet-selection") {
     return "Import setup";
   }
-  return prompt.type === "progress-replace" ? "Progress restore" : "Import decision";
+  return isProgressImportPrompt(prompt) ? "Progress restore" : "Import decision";
 }
 
 function promptTitle(prompt) {
   if (prompt.type === "worksheet-selection") {
     return "Choose worksheet to import";
   }
-  return prompt.type === "progress-replace"
-    ? "Replace saved local progress?"
+  return isProgressImportPrompt(prompt)
+    ? "Saved progress already exists"
     : "Saved local progress already exists";
 }
 
@@ -512,21 +512,25 @@ function renderImportRunSummary(summary) {
 }
 
 function decisionHelpText(prompt) {
-  if (prompt.type === "progress-replace") {
-    return `${progressImportLabel(prompt)} files restore saved progress. Replacing will overwrite the saved local snapshot for this run with the imported progress file.`;
+  if (isProgressImportPrompt(prompt)) {
+    return `Resume keeps your current saved statuses, notes, defects, evidence, and step progress. Replace uses the imported ${progressImportLabel(prompt)} progress file instead.`;
   }
-  return "Resume keeps your saved local statuses, notes, defects, evidence, and step progress. Replace discards the saved local snapshot for this run and uses the newly imported workbook state.";
+  return "Resume keeps your current saved statuses, notes, defects, evidence, and step progress. Replace uses the imported workbook instead.";
 }
 
 function confirmReplaceText(prompt) {
-  if (prompt.type === "progress-replace") {
-    return `Confirm replace: this overwrites the saved local run snapshot for this run only with the imported ${progressImportLabel(prompt)} progress.`;
+  if (isProgressImportPrompt(prompt)) {
+    return `This will overwrite the saved local snapshot for this run with the imported ${progressImportLabel(prompt)} progress file.`;
   }
-  return "Confirm replace: this overwrites the saved local run snapshot for this run only. Source XLSX files are not deleted.";
+  return "This will overwrite the saved local snapshot for this run with the imported workbook. Source XLSX files are not deleted.";
 }
 
 function progressImportLabel(prompt) {
   return String(prompt.importType || "progress").toUpperCase();
+}
+
+function isProgressImportPrompt(prompt) {
+  return prompt?.sourceKind === "progress" || ["csv", "json"].includes(String(prompt?.importType || "").toLowerCase());
 }
 
 async function continueImportWithSelectedWorksheet() {
@@ -543,7 +547,7 @@ async function continueImportWithSelectedWorksheet() {
 }
 
 function requestReplaceConfirmation() {
-  if (!state.pendingImportPrompt || !["existing-progress", "progress-replace"].includes(state.pendingImportPrompt.type)) {
+  if (!state.pendingImportPrompt || state.pendingImportPrompt.type !== "existing-progress") {
     return;
   }
   state.pendingImportPrompt.confirmReplace = true;
@@ -553,6 +557,14 @@ function requestReplaceConfirmation() {
 async function continueImportWithExistingProgress(action) {
   const prompt = state.pendingImportPrompt;
   if (!prompt || prompt.type !== "existing-progress") {
+    return;
+  }
+  if (prompt.importType === "json") {
+    await importJsonRun(prompt.file, { ...prompt.options, existingAction: action });
+    return;
+  }
+  if (prompt.importType === "csv") {
+    await importCsvRun(prompt.file, { ...prompt.options, existingAction: action });
     return;
   }
   await importXlsxRun(prompt.file, { ...prompt.options, existingAction: action });
@@ -565,16 +577,6 @@ async function confirmReplaceImport() {
   }
   if (prompt.type === "existing-progress") {
     await continueImportWithExistingProgress("replace");
-    return;
-  }
-  if (prompt.type === "progress-replace") {
-    if (prompt.importType === "json") {
-      await importJsonRun(prompt.file, { ...prompt.options, existingAction: "replace" });
-      return;
-    }
-    if (prompt.importType === "csv") {
-      await importCsvRun(prompt.file, { ...prompt.options, existingAction: "replace" });
-    }
   }
 }
 
