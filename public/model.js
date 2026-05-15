@@ -342,6 +342,10 @@ export function getNextCaseId(currentCaseId, visibleCaseIds) {
   return visibleCaseIds[index + 1] || null;
 }
 
+export function isCaseVisibleByLocalId(cases, localId) {
+  return Array.isArray(cases) && cases.some((testCase) => testCase?.localId === localId);
+}
+
 export function groupCasesBySection(cases) {
   const groups = [];
   const groupMap = new Map();

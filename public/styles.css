@@ -548,6 +548,15 @@ main {
   display: none;
 }
 
+.bulk-bar.is-empty {
+  background: color-mix(in srgb, var(--panel) 72%, #f8fafc);
+}
+
+.bulk-bar.is-empty label,
+.bulk-bar.is-empty button {
+  opacity: 0.62;
+}
+
 .bulk-bar strong {
   align-self: center;
   white-space: nowrap;

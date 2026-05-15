@@ -15,6 +15,7 @@ import {
   getRunStatuses,
   getStatusColor,
   getEffectiveStepStatus,
+  isCaseVisibleByLocalId,
   groupCasesBySection,
   normalizeRun,
   resolveUnsavedRunRecovery,
@@ -339,6 +340,17 @@ test("getNextCaseId returns the next visible id or null for the last case", () =
   assert.equal(getNextCaseId("a", ["a", "b", "c"]), "b");
   assert.equal(getNextCaseId("c", ["a", "b", "c"]), null);
   assert.equal(getNextCaseId("missing", ["a", "b", "c"]), "a");
+});
+
+test("isCaseVisibleByLocalId checks the current visible case set by stable local id", () => {
+  const visibleCases = [
+    { localId: "T1", title: "Visible one" },
+    { localId: "T2", title: "Visible two" }
+  ];
+
+  assert.equal(isCaseVisibleByLocalId(visibleCases, "T2"), true);
+  assert.equal(isCaseVisibleByLocalId(visibleCases, "T3"), false);
+  assert.equal(isCaseVisibleByLocalId(null, "T2"), false);
 });
 
 test("groupCasesBySection groups by hierarchy leaf while preserving visible order", () => {

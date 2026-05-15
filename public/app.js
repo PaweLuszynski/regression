@@ -13,6 +13,7 @@ import {
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
+  isCaseVisibleByLocalId,
   getRunStatuses,
   groupCasesBySection,
   normalizeRun,
@@ -810,17 +811,14 @@ function render(options = {}) {
     renderCaseList(groupedCases);
     renderDetail(run.cases.find((testCase) => testCase.localId === state.selectedLocalId) || visibleCases[0]);
 
-    if (options.scrollIntoView) {
-      const selectedRow = elements.caseList.querySelector(".case-list-row.selected");
-      if (selectedRow) {
-        selectedRow.scrollIntoView({ block: "nearest" });
-      }
-    }
   };
 
   const renderWithCaseScroll = options.preserveScroll ? withCaseListScrollPreserved : runImmediately;
   const renderWithDetailScroll = options.preserveDetailScroll ? withDetailPaneScrollPreserved : runImmediately;
   renderWithCaseScroll(() => renderWithDetailScroll(doRender));
+  if (options.scrollIntoView) {
+    scheduleCaseListRowScroll(state.selectedLocalId);
+  }
 }
 
 
@@ -925,8 +923,7 @@ function renderTreeNode(node) {
 
 function selectCaseFromTree(localId) {
   state.selectedLocalId = localId;
-  const visibleLocalIds = filteredCases().map((testCase) => testCase.localId);
-  const isVisibleInCaseList = visibleLocalIds.includes(localId);
+  const isVisibleInCaseList = isCaseVisibleByLocalId(filteredCases(), localId);
   render({ preserveScroll: true, scrollIntoView: isVisibleInCaseList });
   if (!isVisibleInCaseList) {
     showMessage("Selected test case is hidden by the current filters, so the test list did not scroll.", "warning");
@@ -958,6 +955,7 @@ function renderCaseList(groups) {
 function caseListRow(testCase) {
   const row = document.createElement("div");
   row.className = "case-list-row";
+  row.dataset.localId = testCase.localId;
   row.tabIndex = 0;
   row.setAttribute("role", "button");
   if (state.selectedCaseIds.has(testCase.localId)) {
@@ -1063,8 +1061,14 @@ function renderDetail(testCase) {
 function renderBulkControls(visibleCases) {
   const selectedVisibleCount = visibleCases.filter((testCase) => state.selectedCaseIds.has(testCase.localId)).length;
   const selectedCount = state.selectedCaseIds.size;
-  elements.bulkBar.hidden = selectedCount === 0;
+  elements.bulkBar.hidden = false;
+  elements.bulkBar.classList.toggle("is-empty", selectedCount === 0);
   elements.selectedCount.textContent = `${selectedCount} selected`;
+  elements.bulkStatusSelect.disabled = selectedCount === 0;
+  elements.bulkApplyButton.disabled = selectedCount === 0;
+  elements.bulkNoteInput.disabled = selectedCount === 0;
+  elements.bulkAppendNoteButton.disabled = selectedCount === 0;
+  elements.clearSelectionButton.disabled = selectedCount === 0;
   elements.selectAllVisibleCheckbox.checked = visibleCases.length > 0 && selectedVisibleCount === visibleCases.length;
   elements.selectAllVisibleCheckbox.indeterminate = selectedVisibleCount > 0 && selectedVisibleCount < visibleCases.length;
 }
@@ -1614,6 +1618,19 @@ function withCaseListScrollPreserved(callback) {
   callback();
   elements.tableWrap.scrollTop = scrollTop;
   elements.tableWrap.scrollLeft = scrollLeft;
+}
+
+function scheduleCaseListRowScroll(localId) {
+  if (!localId) {
+    return;
+  }
+  requestAnimationFrame(() => {
+    const selectedRow = [...elements.caseList.querySelectorAll(".case-list-row")]
+      .find((row) => row.dataset.localId === localId);
+    if (selectedRow) {
+      selectedRow.scrollIntoView({ block: "nearest" });
+    }
+  });
 }
 
 function withDetailPaneScrollPreserved(callback) {
