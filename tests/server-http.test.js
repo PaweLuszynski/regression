@@ -153,6 +153,142 @@ test("HTTP CSV import saves and reloads UI-visible local step statuses", async (
   assert.equal(openPayload.run.cases[0].steps[1].currentStatus, "Failed");
 });
 
+test("HTTP JSON import requires visible replacement decision before overwriting saved progress", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-json-collision-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const progressRun = {
+    id: "R901_Worksheet",
+    sourceFileName: "restore.json",
+    sheetName: "Worksheet",
+    runName: "JSON Restore",
+    runId: "R901",
+    importedAt: "2026-05-15T10:00:00.000Z",
+    columns: [{ index: 0, name: "ID", key: "ID" }],
+    cases: [{
+      localId: "T901",
+      testId: "T901",
+      caseId: "C901",
+      title: "JSON collision",
+      originalStatus: "Untested",
+      currentStatus: "Passed",
+      localNotes: "fresh progress",
+      localDefects: "",
+      localEvidence: "",
+      updatedAt: "2026-05-15T10:01:00.000Z",
+      rawRow: { ID: "T901", Status: "Untested" },
+      steps: []
+    }]
+  };
+
+  const firstImport = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(progressRun)
+  });
+  const firstPayload = await firstImport.json();
+  assert.equal(firstImport.status, 201);
+
+  const savedRun = structuredClone(firstPayload.run);
+  savedRun.cases[0].localNotes = "do not overwrite silently";
+  const saveResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(savedRun.id)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ run: savedRun })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  const collisionResponse = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(progressRun)
+  });
+  const collisionPayload = await collisionResponse.json();
+  assert.equal(collisionResponse.status, 409);
+  assert.equal(collisionPayload.decisionRequired, true);
+  assert.equal(collisionPayload.reason, "replace-progress");
+  assert.equal(collisionPayload.importedRunSummary.runId, "R901");
+
+  const stillSaved = JSON.parse(await readFile(progressPath(progressDir, savedRun.id), "utf8"));
+  assert.equal(stillSaved.cases[0].localNotes, "do not overwrite silently");
+
+  const replaceResponse = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-import-existing-action": "replace"
+    },
+    body: JSON.stringify(progressRun)
+  });
+  const replacePayload = await replaceResponse.json();
+  assert.equal(replaceResponse.status, 200);
+  assert.equal(replacePayload.existingProgressReplaced, true);
+  assert.equal(replacePayload.run.cases[0].localNotes, "fresh progress");
+});
+
+test("HTTP CSV import requires visible replacement decision before overwriting saved progress", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-csv-collision-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const csv = [
+    "Run ID,Run Name,Sheet Name,Source File Name,ID,Title,Current Status,Local Notes",
+    "R902,CSV Restore,Worksheet,restore.csv,T902,CSV collision,Passed,fresh csv progress"
+  ].join("\n");
+
+  const firstImport = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const firstPayload = await firstImport.json();
+  assert.equal(firstImport.status, 201);
+
+  const savedRun = structuredClone(firstPayload.run);
+  savedRun.cases[0].localNotes = "keep until confirmed";
+  const saveResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(savedRun.id)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ run: savedRun })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  const collisionResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const collisionPayload = await collisionResponse.json();
+  assert.equal(collisionResponse.status, 409);
+  assert.equal(collisionPayload.decisionRequired, true);
+  assert.equal(collisionPayload.reason, "replace-progress");
+  assert.equal(collisionPayload.importedRunSummary.runId, "R902");
+
+  const stillSaved = JSON.parse(await readFile(progressPath(progressDir, savedRun.id), "utf8"));
+  assert.equal(stillSaved.cases[0].localNotes, "keep until confirmed");
+
+  const replaceResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv"),
+      "x-import-existing-action": "replace"
+    },
+    body: csv
+  });
+  const replacePayload = await replaceResponse.json();
+  assert.equal(replaceResponse.status, 200);
+  assert.equal(replacePayload.existingProgressReplaced, true);
+  assert.equal(replacePayload.run.cases[0].localNotes, "fresh csv progress");
+});
+
 async function startTestServer(progressDir) {
   const server = createServer({
     host: "127.0.0.1",

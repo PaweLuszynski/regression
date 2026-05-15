@@ -61,6 +61,35 @@ export function classifyXlsxImportResponse(responseStatus, payload, options = {}
   };
 }
 
+export function classifyProgressImportResponse(responseStatus, payload, importType = "progress") {
+  const normalizedType = String(importType || "progress").toLowerCase();
+
+  if (responseStatus === 409 && payload?.decisionRequired && payload?.reason === "replace-progress") {
+    return {
+      kind: "prompt",
+      prompt: {
+        type: "progress-replace",
+        importType: normalizedType,
+        importedRunSummary: payload.importedRunSummary || summarizeImportedRun(payload.run),
+        message: payload.message || "Saved local progress already exists for this run. Confirm before replacing it.",
+        confirmReplace: false
+      }
+    };
+  }
+
+  if (responseStatus < 200 || responseStatus >= 300) {
+    return {
+      kind: "error",
+      error: payload?.error || `${normalizedType.toUpperCase()} restore failed.`
+    };
+  }
+
+  return {
+    kind: "success",
+    payload
+  };
+}
+
 export function shouldSkipRecoveryForProgressImport(payload) {
   return Boolean(payload?.run?.id && ["csv", "json"].includes(String(payload.importType || "").toLowerCase()));
 }

@@ -1,4 +1,4 @@
-import { classifyXlsxImportResponse, shouldSkipRecoveryForProgressImport } from "./import-flow.js";
+import { classifyProgressImportResponse, classifyXlsxImportResponse, shouldSkipRecoveryForProgressImport } from "./import-flow.js";
 import { buildCsvExport } from "./run-export.js";
 import {
   appendNoteToCases,
@@ -220,7 +220,9 @@ async function importFromFile(event) {
 }
 
 async function importXlsxRun(file, options = {}) {
-  showMessage("Importing selected XLSX...", "info");
+  if (!options.existingAction) {
+    showMessage("Importing selected XLSX...", "info");
+  }
   const response = await fetch("/api/import", {
     method: "POST",
     headers: {
@@ -258,59 +260,85 @@ async function importXlsxRun(file, options = {}) {
   await loadSavedRuns();
 }
 
-async function importJsonRun(file) {
-  clearImportPrompt();
-  if (state.run && !confirm("Restore JSON progress and replace the currently loaded run?")) {
-    return;
+async function importJsonRun(file, options = {}) {
+  if (!options.existingAction) {
+    clearImportPrompt();
   }
-  showMessage("Restoring JSON progress...", "info");
   const response = await fetch("/api/import-json", {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: await file.text()
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "JSON restore failed.");
-  }
-  const importPayload = { ...payload, importType: "json" };
-  const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
-  if (skipRecovery) {
-    clearUnsavedRun(payload.run.id);
-  }
-  const recoveryAction = setRun(payload.run, { skipRecovery });
-  if (recoveryAction === "none") {
-    showMessage(payload.message, "success");
-  }
-  await loadSavedRuns();
-}
-
-async function importCsvRun(file) {
-  clearImportPrompt();
-  if (state.run && !confirm("Restore CSV progress and replace the currently loaded run?")) {
-    return;
-  }
-  showMessage("Restoring CSV progress...", "info");
-  const response = await fetch("/api/import-csv", {
-    method: "POST",
     headers: {
-      "content-type": "text/csv",
-      "x-file-name": encodeURIComponent(file.name)
+      "content-type": "application/json",
+      ...(options.existingAction ? { "x-import-existing-action": encodeURIComponent(options.existingAction) } : {})
     },
     body: await file.text()
   });
   const payload = await response.json();
-  if (!response.ok) {
-    throw new Error(payload.error || "CSV restore failed.");
+  const importResult = classifyProgressImportResponse(response.status, payload, "json");
+  if (importResult.kind === "prompt") {
+    clearMessage();
+    setImportPrompt({
+      ...importResult.prompt,
+      file,
+      options
+    });
+    return;
   }
-  const importPayload = { ...payload, importType: "csv" };
+  if (importResult.kind === "error") {
+    clearImportPrompt();
+    throw new Error(importResult.error);
+  }
+  clearImportPrompt();
+  const successPayload = importResult.payload;
+  const importPayload = { ...successPayload, importType: "json" };
   const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
   if (skipRecovery) {
-    clearUnsavedRun(payload.run.id);
+    clearUnsavedRun(successPayload.run.id);
   }
-  const recoveryAction = setRun(payload.run, { skipRecovery });
+  const recoveryAction = setRun(successPayload.run, { skipRecovery });
   if (recoveryAction === "none") {
-    showMessage(payload.message, "success");
+    showMessage(successPayload.message, "success");
+  }
+  await loadSavedRuns();
+}
+
+async function importCsvRun(file, options = {}) {
+  if (!options.existingAction) {
+    clearImportPrompt();
+  }
+  const response = await fetch("/api/import-csv", {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent(file.name),
+      ...(options.existingAction ? { "x-import-existing-action": encodeURIComponent(options.existingAction) } : {})
+    },
+    body: await file.text()
+  });
+  const payload = await response.json();
+  const importResult = classifyProgressImportResponse(response.status, payload, "csv");
+  if (importResult.kind === "prompt") {
+    clearMessage();
+    setImportPrompt({
+      ...importResult.prompt,
+      file,
+      options
+    });
+    return;
+  }
+  if (importResult.kind === "error") {
+    clearImportPrompt();
+    throw new Error(importResult.error);
+  }
+  clearImportPrompt();
+  const successPayload = importResult.payload;
+  const importPayload = { ...successPayload, importType: "csv" };
+  const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
+  if (skipRecovery) {
+    clearUnsavedRun(successPayload.run.id);
+  }
+  const recoveryAction = setRun(successPayload.run, { skipRecovery });
+  if (recoveryAction === "none") {
+    showMessage(successPayload.message, "success");
   }
   await loadSavedRuns();
 }
@@ -343,8 +371,8 @@ function renderImportPrompt() {
   const copy = document.createElement("div");
   copy.className = "import-prompt-copy";
   copy.append(
-    textElement("span", prompt.type === "worksheet-selection" ? "Import setup" : "Import decision", "import-prompt-eyebrow"),
-    textElement("h2", prompt.type === "worksheet-selection" ? "Choose worksheet to import" : "Saved local progress already exists"),
+    textElement("span", promptEyebrow(prompt), "import-prompt-eyebrow"),
+    textElement("h2", promptTitle(prompt)),
     textElement("p", prompt.message || "", "import-prompt-lead")
   );
   header.append(copy);
@@ -402,52 +430,38 @@ function renderExistingProgressPrompt(prompt) {
   const wrapper = document.createElement("div");
   wrapper.className = "import-prompt-copy";
   const summary = prompt.importedRunSummary || {};
-  const summaryList = document.createElement("dl");
-  summaryList.className = "import-prompt-summary";
-  for (const [label, value] of [
-    ["Run", summary.runName || summary.id || "Imported run"],
-    ["Run ID", summary.runId || "Unknown"],
-    ["Worksheet", summary.sheetName || "Unknown"],
-    ["Cases", summary.caseCount || 0]
-  ]) {
-    const item = document.createElement("div");
-    item.className = "import-prompt-summary-item";
-    item.append(textElement("dt", label), textElement("dd", String(value)));
-    summaryList.append(item);
-  }
-  wrapper.append(summaryList);
-  wrapper.append(textElement("p", "Resume keeps your saved local statuses, notes, defects, evidence, and step progress. Replace discards the saved local snapshot for this run and uses the newly imported workbook state.", "import-prompt-detail"));
+  wrapper.append(renderImportRunSummary(summary));
+  wrapper.append(textElement("p", decisionHelpText(prompt), "import-prompt-detail"));
 
   if (prompt.confirmReplace) {
-    wrapper.append(textElement("div", "Confirm replace: this overwrites the saved local run snapshot for this run only. Source XLSX files are not deleted.", "import-prompt-confirm"));
+    wrapper.append(textElement("div", confirmReplaceText(prompt), "import-prompt-confirm"));
   }
 
   const actions = document.createElement("div");
   actions.className = "import-prompt-actions";
-  const resumeButton = document.createElement("button");
-  resumeButton.type = "button";
-  resumeButton.className = "button-primary";
-  resumeButton.textContent = "Resume saved progress";
-  resumeButton.addEventListener("click", () => continueImportWithExistingProgress("resume"));
-
-  actions.append(resumeButton);
+  if (prompt.type === "existing-progress" && !prompt.confirmReplace) {
+    const resumeButton = document.createElement("button");
+    resumeButton.type = "button";
+    resumeButton.className = "button-primary";
+    resumeButton.textContent = "Resume saved progress";
+    resumeButton.addEventListener("click", () => continueImportWithExistingProgress("resume"));
+    actions.append(resumeButton);
+  }
 
   if (prompt.confirmReplace) {
     const confirmButton = document.createElement("button");
     confirmButton.type = "button";
     confirmButton.className = "button-danger";
     confirmButton.textContent = "Confirm replace";
-    confirmButton.addEventListener("click", () => continueImportWithExistingProgress("replace"));
-    const backButton = document.createElement("button");
-    backButton.type = "button";
-    backButton.textContent = "Back";
-    backButton.addEventListener("click", cancelReplaceConfirmation);
-    actions.append(confirmButton, backButton);
+    confirmButton.addEventListener("click", confirmReplaceImport);
+    actions.append(confirmButton);
   } else {
     const replaceButton = document.createElement("button");
     replaceButton.type = "button";
     replaceButton.className = "button-danger";
-    replaceButton.textContent = "Replace with imported workbook";
+    replaceButton.textContent = prompt.type === "progress-replace"
+      ? "Replace saved progress"
+      : "Replace with imported workbook";
     replaceButton.addEventListener("click", requestReplaceConfirmation);
     actions.append(replaceButton);
   }
@@ -459,6 +473,60 @@ function renderExistingProgressPrompt(prompt) {
   actions.append(cancelButton);
   wrapper.append(actions);
   return wrapper;
+}
+
+function promptEyebrow(prompt) {
+  if (prompt.type === "worksheet-selection") {
+    return "Import setup";
+  }
+  return prompt.type === "progress-replace" ? "Progress restore" : "Import decision";
+}
+
+function promptTitle(prompt) {
+  if (prompt.type === "worksheet-selection") {
+    return "Choose worksheet to import";
+  }
+  return prompt.type === "progress-replace"
+    ? "Replace saved local progress?"
+    : "Saved local progress already exists";
+}
+
+function renderImportRunSummary(summary) {
+  const summaryLine = document.createElement("p");
+  summaryLine.className = "import-prompt-summary-line";
+  const parts = [
+    ["Run", summary.runName || summary.id || "Imported run"],
+    ["Run ID", summary.runId || "Unknown"],
+    ["Worksheet", summary.sheetName || "Unknown"],
+    ["Cases", summary.caseCount || 0]
+  ];
+  summaryLine.append(...parts.flatMap(([label, value], index) => {
+    const labelElement = textElement("strong", `${label}:`);
+    const valueElement = document.createTextNode(` ${String(value)}`);
+    if (index === parts.length - 1) {
+      return [labelElement, valueElement];
+    }
+    return [labelElement, valueElement, document.createTextNode(" · ")];
+  }));
+  return summaryLine;
+}
+
+function decisionHelpText(prompt) {
+  if (prompt.type === "progress-replace") {
+    return `${progressImportLabel(prompt)} files restore saved progress. Replacing will overwrite the saved local snapshot for this run with the imported progress file.`;
+  }
+  return "Resume keeps your saved local statuses, notes, defects, evidence, and step progress. Replace discards the saved local snapshot for this run and uses the newly imported workbook state.";
+}
+
+function confirmReplaceText(prompt) {
+  if (prompt.type === "progress-replace") {
+    return `Confirm replace: this overwrites the saved local run snapshot for this run only with the imported ${progressImportLabel(prompt)} progress.`;
+  }
+  return "Confirm replace: this overwrites the saved local run snapshot for this run only. Source XLSX files are not deleted.";
+}
+
+function progressImportLabel(prompt) {
+  return String(prompt.importType || "progress").toUpperCase();
 }
 
 async function continueImportWithSelectedWorksheet() {
@@ -475,18 +543,10 @@ async function continueImportWithSelectedWorksheet() {
 }
 
 function requestReplaceConfirmation() {
-  if (!state.pendingImportPrompt || state.pendingImportPrompt.type !== "existing-progress") {
+  if (!state.pendingImportPrompt || !["existing-progress", "progress-replace"].includes(state.pendingImportPrompt.type)) {
     return;
   }
   state.pendingImportPrompt.confirmReplace = true;
-  renderImportPrompt();
-}
-
-function cancelReplaceConfirmation() {
-  if (!state.pendingImportPrompt || state.pendingImportPrompt.type !== "existing-progress") {
-    return;
-  }
-  state.pendingImportPrompt.confirmReplace = false;
   renderImportPrompt();
 }
 
@@ -496,6 +556,26 @@ async function continueImportWithExistingProgress(action) {
     return;
   }
   await importXlsxRun(prompt.file, { ...prompt.options, existingAction: action });
+}
+
+async function confirmReplaceImport() {
+  const prompt = state.pendingImportPrompt;
+  if (!prompt) {
+    return;
+  }
+  if (prompt.type === "existing-progress") {
+    await continueImportWithExistingProgress("replace");
+    return;
+  }
+  if (prompt.type === "progress-replace") {
+    if (prompt.importType === "json") {
+      await importJsonRun(prompt.file, { ...prompt.options, existingAction: "replace" });
+      return;
+    }
+    if (prompt.importType === "csv") {
+      await importCsvRun(prompt.file, { ...prompt.options, existingAction: "replace" });
+    }
+  }
 }
 
 function cancelPendingImportPrompt() {
