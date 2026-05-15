@@ -1,4 +1,5 @@
-import { classifyXlsxImportResponse } from "./import-flow.js";
+import { classifyXlsxImportResponse, shouldSkipRecoveryForProgressImport } from "./import-flow.js";
+import { buildCsvExport } from "./run-export.js";
 import {
   appendNoteToCases,
   applyStepStatusToCase,
@@ -10,6 +11,7 @@ import {
   getNextCaseId,
   getNextSavedRunIdAfterDeletion,
   getStatusColor,
+  getEffectiveStepStatus,
   getVisibleCaseOrder,
   getRunStatuses,
   groupCasesBySection,
@@ -271,7 +273,12 @@ async function importJsonRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "JSON restore failed.");
   }
-  const recoveryAction = setRun(payload.run);
+  const importPayload = { ...payload, importType: "json" };
+  const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
+  if (skipRecovery) {
+    clearUnsavedRun(payload.run.id);
+  }
+  const recoveryAction = setRun(payload.run, { skipRecovery });
   if (recoveryAction === "none") {
     showMessage(payload.message, "success");
   }
@@ -296,7 +303,12 @@ async function importCsvRun(file) {
   if (!response.ok) {
     throw new Error(payload.error || "CSV restore failed.");
   }
-  const recoveryAction = setRun(payload.run);
+  const importPayload = { ...payload, importType: "csv" };
+  const skipRecovery = shouldSkipRecoveryForProgressImport(importPayload);
+  if (skipRecovery) {
+    clearUnsavedRun(payload.run.id);
+  }
+  const recoveryAction = setRun(payload.run, { skipRecovery });
   if (recoveryAction === "none") {
     showMessage(payload.message, "success");
   }
@@ -1074,7 +1086,7 @@ function createStepStatusEditor(testCase, stepIndex, row) {
     option.textContent = status;
     select.append(option);
   }
-  select.value = row.currentStatus || row.status || "";
+  select.value = getEffectiveStepStatus(row);
   select.title = `Step ${stepIndex + 1} status`;
   select.setAttribute("aria-label", `Step ${stepIndex + 1} status`);
   select.addEventListener("change", () => {
@@ -1538,34 +1550,7 @@ function exportCsv() {
     return;
   }
   closeMenus();
-  const fields = [
-    ["Run ID", "runId"],
-    ["Run Name", "runName"],
-    ["Sheet Name", "sheetName"],
-    ["Source File Name", "sourceFileName"],
-    ["ID", "testId"],
-    ["Case ID", "caseId"],
-    ["Title", "title"],
-    ["Section", "section"],
-    ["Section Hierarchy", "sectionHierarchy"],
-    ["Original Status", "originalStatus"],
-    ["Current Status", "currentStatus"],
-    ["Local Notes", "localNotes"],
-    ["Local Defects", "localDefects"],
-    ["Local Evidence", "localEvidence"],
-    ["Updated At", "updatedAt"]
-  ];
-  const rows = [fields.map(([name]) => name).join(",")];
-  for (const testCase of state.run.cases) {
-    rows.push(fields.map(([, field]) => {
-      if (field === "runId") return csvEscape(state.run.runId || "");
-      if (field === "runName") return csvEscape(state.run.runName || "");
-      if (field === "sheetName") return csvEscape(state.run.sheetName || "");
-      if (field === "sourceFileName") return csvEscape(state.run.sourceFileName || "");
-      return csvEscape(testCase[field] || "");
-    }).join(","));
-  }
-  const blob = new Blob([`${rows.join("\n")}\n`], { type: "text/csv" });
+  const blob = new Blob([buildCsvExport(state.run)], { type: "text/csv" });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
@@ -1779,14 +1764,6 @@ function formatDateTime(value) {
   }
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-}
-
-function csvEscape(value) {
-  const text = String(value);
-  if (/[",\n]/.test(text)) {
-    return `"${text.replaceAll('"', '""')}"`;
-  }
-  return text;
 }
 
 function closeMenus() {

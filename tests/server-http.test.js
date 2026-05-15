@@ -117,6 +117,42 @@ test("HTTP run endpoints return readable errors for representative failures", as
   assert.match((await invalidSaveResponse.json()).error, /invalid run payload/i);
 });
 
+test("HTTP CSV import saves and reloads UI-visible local step statuses", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-csv-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const csv = [
+    "Run ID,Run Name,Sheet Name,Source File Name,ID,Title,Current Status,Steps (Step),Steps (Expected Result),Steps (Status),Local Step Statuses",
+    "R900,CSV Restore,Worksheet,restore.csv,T900,Step restore,In test,\"First step\nSecond step\",\"First expected\nSecond expected\",\"Untested\nUntested\",\"Passed\nFailed\""
+  ].join("\n");
+
+  const importResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const importPayload = await importResponse.json();
+
+  assert.equal(importResponse.status, 201);
+  assert.equal(importPayload.run.cases[0].steps[0].status, "Untested");
+  assert.equal(importPayload.run.cases[0].steps[0].localCurrentStatus, "Passed");
+  assert.equal(importPayload.run.cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(importPayload.run.cases[0].steps[1].status, "Untested");
+  assert.equal(importPayload.run.cases[0].steps[1].localCurrentStatus, "Failed");
+  assert.equal(importPayload.run.cases[0].steps[1].currentStatus, "Failed");
+
+  const openResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(importPayload.run.id)}`);
+  const openPayload = await openResponse.json();
+
+  assert.equal(openResponse.status, 200);
+  assert.equal(openPayload.run.cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(openPayload.run.cases[0].steps[1].currentStatus, "Failed");
+});
+
 async function startTestServer(progressDir) {
   const server = createServer({
     host: "127.0.0.1",
