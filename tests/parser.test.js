@@ -246,6 +246,7 @@ test("parses TestRail rows while preserving duplicate headers and raw values", a
     step: "Submit credentials",
     expectedResult: "See dashboard",
     status: "Untested",
+    localCurrentStatus: "",
     currentStatus: "Untested",
     additionalInfo: "",
     references: ""

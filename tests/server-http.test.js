@@ -117,6 +117,207 @@ test("HTTP run endpoints return readable errors for representative failures", as
   assert.match((await invalidSaveResponse.json()).error, /invalid run payload/i);
 });
 
+test("HTTP CSV import saves and reloads UI-visible local step statuses", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-csv-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const csv = [
+    "Run ID,Run Name,Sheet Name,Source File Name,ID,Title,Current Status,Steps (Step),Steps (Expected Result),Steps (Status),Local Step Statuses",
+    "R900,CSV Restore,Worksheet,restore.csv,T900,Step restore,In test,\"First step\nSecond step\",\"First expected\nSecond expected\",\"Untested\nUntested\",\"Passed\nFailed\""
+  ].join("\n");
+
+  const importResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const importPayload = await importResponse.json();
+
+  assert.equal(importResponse.status, 201);
+  assert.equal(importPayload.run.cases[0].steps[0].status, "Untested");
+  assert.equal(importPayload.run.cases[0].steps[0].localCurrentStatus, "Passed");
+  assert.equal(importPayload.run.cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(importPayload.run.cases[0].steps[1].status, "Untested");
+  assert.equal(importPayload.run.cases[0].steps[1].localCurrentStatus, "Failed");
+  assert.equal(importPayload.run.cases[0].steps[1].currentStatus, "Failed");
+
+  const openResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(importPayload.run.id)}`);
+  const openPayload = await openResponse.json();
+
+  assert.equal(openResponse.status, 200);
+  assert.equal(openPayload.run.cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(openPayload.run.cases[0].steps[1].currentStatus, "Failed");
+});
+
+test("HTTP JSON import requires resume or replace decision before overwriting saved progress", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-json-collision-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const progressRun = {
+    id: "R901_Worksheet",
+    sourceFileName: "restore.json",
+    sheetName: "Worksheet",
+    runName: "JSON Restore",
+    runId: "R901",
+    importedAt: "2026-05-15T10:00:00.000Z",
+    columns: [{ index: 0, name: "ID", key: "ID" }],
+    cases: [{
+      localId: "T901",
+      testId: "T901",
+      caseId: "C901",
+      title: "JSON collision",
+      originalStatus: "Untested",
+      currentStatus: "Passed",
+      localNotes: "fresh progress",
+      localDefects: "",
+      localEvidence: "",
+      updatedAt: "2026-05-15T10:01:00.000Z",
+      rawRow: { ID: "T901", Status: "Untested" },
+      steps: []
+    }]
+  };
+
+  const firstImport = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(progressRun)
+  });
+  const firstPayload = await firstImport.json();
+  assert.equal(firstImport.status, 201);
+
+  const savedRun = structuredClone(firstPayload.run);
+  savedRun.cases[0].localNotes = "do not overwrite silently";
+  const saveResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(savedRun.id)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ run: savedRun })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  const collisionResponse = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(progressRun)
+  });
+  const collisionPayload = await collisionResponse.json();
+  assert.equal(collisionResponse.status, 409);
+  assert.equal(collisionPayload.decisionRequired, true);
+  assert.equal(collisionPayload.reason, "existing-progress");
+  assert.equal(collisionPayload.importedRunSummary.runId, "R901");
+
+  const stillSaved = JSON.parse(await readFile(progressPath(progressDir, savedRun.id), "utf8"));
+  assert.equal(stillSaved.cases[0].localNotes, "do not overwrite silently");
+
+  const resumeResponse = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-import-existing-action": "resume"
+    },
+    body: JSON.stringify(progressRun)
+  });
+  const resumePayload = await resumeResponse.json();
+  assert.equal(resumeResponse.status, 200);
+  assert.equal(resumePayload.existingProgressFound, true);
+  assert.match(resumePayload.message, /kept and loaded/i);
+  assert.equal(resumePayload.run.cases[0].localNotes, "do not overwrite silently");
+
+  const replaceResponse = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-import-existing-action": "replace"
+    },
+    body: JSON.stringify(progressRun)
+  });
+  const replacePayload = await replaceResponse.json();
+  assert.equal(replaceResponse.status, 200);
+  assert.equal(replacePayload.existingProgressReplaced, true);
+  assert.equal(replacePayload.run.cases[0].localNotes, "fresh progress");
+});
+
+test("HTTP CSV import requires resume or replace decision before overwriting saved progress", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-csv-collision-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const csv = [
+    "Run ID,Run Name,Sheet Name,Source File Name,ID,Title,Current Status,Local Notes",
+    "R902,CSV Restore,Worksheet,restore.csv,T902,CSV collision,Passed,fresh csv progress"
+  ].join("\n");
+
+  const firstImport = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const firstPayload = await firstImport.json();
+  assert.equal(firstImport.status, 201);
+
+  const savedRun = structuredClone(firstPayload.run);
+  savedRun.cases[0].localNotes = "keep until confirmed";
+  const saveResponse = await fetch(`${baseUrl}/api/runs/${encodeURIComponent(savedRun.id)}`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ run: savedRun })
+  });
+  assert.equal(saveResponse.status, 200);
+
+  const collisionResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const collisionPayload = await collisionResponse.json();
+  assert.equal(collisionResponse.status, 409);
+  assert.equal(collisionPayload.decisionRequired, true);
+  assert.equal(collisionPayload.reason, "existing-progress");
+  assert.equal(collisionPayload.importedRunSummary.runId, "R902");
+
+  const stillSaved = JSON.parse(await readFile(progressPath(progressDir, savedRun.id), "utf8"));
+  assert.equal(stillSaved.cases[0].localNotes, "keep until confirmed");
+
+  const resumeResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv"),
+      "x-import-existing-action": "resume"
+    },
+    body: csv
+  });
+  const resumePayload = await resumeResponse.json();
+  assert.equal(resumeResponse.status, 200);
+  assert.equal(resumePayload.existingProgressFound, true);
+  assert.match(resumePayload.message, /kept and loaded/i);
+  assert.equal(resumePayload.run.cases[0].localNotes, "keep until confirmed");
+
+  const replaceResponse = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv"),
+      "x-import-existing-action": "replace"
+    },
+    body: csv
+  });
+  const replacePayload = await replaceResponse.json();
+  assert.equal(replaceResponse.status, 200);
+  assert.equal(replacePayload.existingProgressReplaced, true);
+  assert.equal(replacePayload.run.cases[0].localNotes, "fresh csv progress");
+});
+
 async function startTestServer(progressDir) {
   const server = createServer({
     host: "127.0.0.1",

@@ -14,6 +14,7 @@ import {
   getNextCaseId,
   getRunStatuses,
   getStatusColor,
+  getEffectiveStepStatus,
   groupCasesBySection,
   normalizeRun,
   resolveUnsavedRunRecovery,
@@ -322,7 +323,7 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   const cases = [{
     localId: "a",
     updatedAt: "old",
-    steps: [{ status: "Untested", currentStatus: "Untested" }]
+    steps: [{ status: "Untested", currentStatus: "Untested", localCurrentStatus: "" }]
   }];
 
   const result = applyStepStatusToCase(cases, "a", 0, "Passed", "now");
@@ -330,6 +331,7 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   assert.equal(result.changed, 1);
   assert.equal(cases[0].steps[0].status, "Untested");
   assert.equal(cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(cases[0].steps[0].localCurrentStatus, "Passed");
   assert.equal(cases[0].updatedAt, "now");
 });
 
@@ -512,6 +514,19 @@ test("normalizeRun preserves blank local step status when no imported step statu
 
   assert.equal(run.cases[0].steps[0].status, "");
   assert.equal(run.cases[0].steps[0].currentStatus, "");
+});
+
+test("getEffectiveStepStatus returns the UI-visible local step override", () => {
+  assert.equal(getEffectiveStepStatus({
+    status: "Untested",
+    localCurrentStatus: "Passed",
+    currentStatus: "Passed"
+  }), "Passed");
+  assert.equal(getEffectiveStepStatus({
+    status: "Untested",
+    localCurrentStatus: "",
+    currentStatus: "Untested"
+  }), "Untested");
 });
 
 test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {
