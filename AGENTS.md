@@ -104,6 +104,15 @@ Changing current status must update:
 - Checkbox selection should not trigger row-open behavior.
 - `Pass & Next` should follow the current visible filtered/grouped order.
 
+## UI debugging rules
+
+- For UI bugs, reproduce the exact failing user path before patching; do not simplify the path unless the original path is also tested.
+- For keyboard/focus bugs, verify `document.activeElement`, keyboard-only and mouse-then-keyboard paths, scroll position, selected/open item, and whether rerender replaced the focused DOM node.
+- If a bug repeats after a claimed fix, stop assumption-based patches and create a real browser reproduction script or check.
+- For rerendered controls, restore focus to the recreated element when keyboard continuity matters.
+- For Space, Enter, and Arrow key handling, verify `preventDefault`/`stopPropagation` behavior and avoid double toggles.
+- Do not mark an interaction bug fixed until real browser verification proves the reported path works.
+
 ## Data/export rules
 
 Exported JSON should include:
