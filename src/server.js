@@ -144,6 +144,11 @@ async function route(request, response, context) {
   }
 
   if (request.method === "POST" && pathname === "/api/import-json") {
+    const existingAction = decodeImportHeader(request.headers["x-import-existing-action"]).toLowerCase();
+    if (existingAction && !["resume", "replace"].includes(existingAction)) {
+      return sendJson(response, 400, { error: "Invalid JSON restore action. Use resume or replace." });
+    }
+
     let restoredRun;
     try {
       restoredRun = parseRunProgressJson((await readRequestBody(request)).toString("utf8"));
@@ -151,14 +156,44 @@ async function route(request, response, context) {
       return sendJson(response, 400, { error: error.message || "Invalid JSON progress file." });
     }
 
+    const existingSavedRun = await findExistingImportedRun(progressDir, restoredRun, restoredRun.sourceFileName);
+    if (existingSavedRun && !existingAction) {
+      return sendJson(response, 409, {
+        decisionRequired: true,
+        existingProgressFound: true,
+        reason: "existing-progress",
+        importedRunSummary: summarizeRun(restoredRun),
+        message: "This run already has saved local progress. Choose whether to keep it or replace it with the imported JSON progress file."
+      });
+    }
+
+    if (existingSavedRun && existingAction === "resume") {
+      return sendJson(response, 200, {
+        run: existingSavedRun.run,
+        existingProgressFound: true,
+        message: "Existing saved progress was kept and loaded."
+      });
+    }
+
     await saveRun(progressDir, restoredRun);
-    return sendJson(response, 201, {
+    if (existingSavedRun && existingSavedRun.id !== restoredRun.id) {
+      await deleteSavedRunFromDir(progressDir, existingSavedRun.id);
+    }
+    return sendJson(response, existingSavedRun ? 200 : 201, {
       run: restoredRun,
-      message: "JSON progress restored and saved locally."
+      existingProgressReplaced: Boolean(existingSavedRun),
+      message: existingSavedRun
+        ? "Saved progress was replaced with the imported JSON progress file."
+        : "JSON progress restored and saved locally."
     });
   }
 
   if (request.method === "POST" && pathname === "/api/import-csv") {
+    const existingAction = decodeImportHeader(request.headers["x-import-existing-action"]).toLowerCase();
+    if (existingAction && !["resume", "replace"].includes(existingAction)) {
+      return sendJson(response, 400, { error: "Invalid CSV restore action. Use resume or replace." });
+    }
+
     let restoredRun;
     try {
       restoredRun = parseRunProgressCsv((await readRequestBody(request)).toString("utf8"), {
@@ -168,10 +203,35 @@ async function route(request, response, context) {
       return sendJson(response, 400, { error: error.message || "Invalid CSV progress file." });
     }
 
+    const existingSavedRun = await findExistingImportedRun(progressDir, restoredRun, restoredRun.sourceFileName);
+    if (existingSavedRun && !existingAction) {
+      return sendJson(response, 409, {
+        decisionRequired: true,
+        existingProgressFound: true,
+        reason: "existing-progress",
+        importedRunSummary: summarizeRun(restoredRun),
+        message: "This run already has saved local progress. Choose whether to keep it or replace it with the imported CSV progress file."
+      });
+    }
+
+    if (existingSavedRun && existingAction === "resume") {
+      return sendJson(response, 200, {
+        run: existingSavedRun.run,
+        existingProgressFound: true,
+        message: "Existing saved progress was kept and loaded."
+      });
+    }
+
     await saveRun(progressDir, restoredRun);
-    return sendJson(response, 201, {
+    if (existingSavedRun && existingSavedRun.id !== restoredRun.id) {
+      await deleteSavedRunFromDir(progressDir, existingSavedRun.id);
+    }
+    return sendJson(response, existingSavedRun ? 200 : 201, {
       run: restoredRun,
-      message: "CSV progress restored and saved locally."
+      existingProgressReplaced: Boolean(existingSavedRun),
+      message: existingSavedRun
+        ? "Saved progress was replaced with the imported CSV progress file."
+        : "CSV progress restored and saved locally."
     });
   }
 

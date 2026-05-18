@@ -16,6 +16,8 @@ import {
   getNextCaseId,
   getRunStatuses,
   getStatusColor,
+  getEffectiveStepStatus,
+  isCaseVisibleByLocalId,
   groupCasesBySection,
   normalizeRun,
   resolveUnsavedRunRecovery,
@@ -342,7 +344,7 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   const cases = [{
     localId: "a",
     updatedAt: "old",
-    steps: [{ status: "Untested", currentStatus: "Untested" }]
+    steps: [{ status: "Untested", currentStatus: "Untested", localCurrentStatus: "" }]
   }];
 
   const result = applyStepStatusToCase(cases, "a", 0, "Passed", "now");
@@ -350,6 +352,7 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   assert.equal(result.changed, 1);
   assert.equal(cases[0].steps[0].status, "Untested");
   assert.equal(cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(cases[0].steps[0].localCurrentStatus, "Passed");
   assert.equal(cases[0].updatedAt, "now");
 });
 
@@ -357,6 +360,17 @@ test("getNextCaseId returns the next visible id or null for the last case", () =
   assert.equal(getNextCaseId("a", ["a", "b", "c"]), "b");
   assert.equal(getNextCaseId("c", ["a", "b", "c"]), null);
   assert.equal(getNextCaseId("missing", ["a", "b", "c"]), "a");
+});
+
+test("isCaseVisibleByLocalId checks the current visible case set by stable local id", () => {
+  const visibleCases = [
+    { localId: "T1", title: "Visible one" },
+    { localId: "T2", title: "Visible two" }
+  ];
+
+  assert.equal(isCaseVisibleByLocalId(visibleCases, "T2"), true);
+  assert.equal(isCaseVisibleByLocalId(visibleCases, "T3"), false);
+  assert.equal(isCaseVisibleByLocalId(null, "T2"), false);
 });
 
 test("groupCasesBySection groups by hierarchy leaf while preserving visible order", () => {
@@ -532,6 +546,19 @@ test("normalizeRun preserves blank local step status when no imported step statu
 
   assert.equal(run.cases[0].steps[0].status, "");
   assert.equal(run.cases[0].steps[0].currentStatus, "");
+});
+
+test("getEffectiveStepStatus returns the UI-visible local step override", () => {
+  assert.equal(getEffectiveStepStatus({
+    status: "Untested",
+    localCurrentStatus: "Passed",
+    currentStatus: "Passed"
+  }), "Passed");
+  assert.equal(getEffectiveStepStatus({
+    status: "Untested",
+    localCurrentStatus: "",
+    currentStatus: "Untested"
+  }), "Untested");
 });
 
 test("sortSavedRuns orders runs by newest, oldest, run name, and run ID", () => {
