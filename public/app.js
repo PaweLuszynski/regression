@@ -132,6 +132,8 @@ elements.clearSelectionButton.addEventListener("click", clearSelection);
 elements.selectAllVisibleCheckbox.addEventListener("change", toggleAllVisibleSelection);
 elements.selectAllVisibleCheckbox.addEventListener("keydown", handleSelectAllVisibleCheckboxKeydown);
 elements.selectAllVisibleCheckbox.addEventListener("keyup", stopCheckboxActivationKey);
+elements.caseList.addEventListener("keydown", handleCaseListCheckboxKeydown, true);
+elements.caseList.addEventListener("keyup", stopCaseListCheckboxKeyup, true);
 elements.recoverUnsavedButton.addEventListener("click", recoverUnsavedChanges);
 elements.discardUnsavedButton.addEventListener("click", discardUnsavedChanges);
 window.addEventListener("mousemove", resizePanels);
@@ -1033,20 +1035,12 @@ function caseListRow(testCase) {
   const checkbox = document.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = state.selectedCaseIds.has(testCase.localId);
+  checkbox.dataset.rowSelectCheckbox = "true";
+  checkbox.dataset.localId = testCase.localId;
   checkbox.setAttribute("aria-label", `Select ${testCase.testId || testCase.caseId || "test case"}`);
   checkbox.addEventListener("click", (event) => {
     event.stopPropagation();
   });
-  checkbox.addEventListener("keydown", (event) => {
-    if (!isCheckboxActivationKey(event.key)) {
-      return;
-    }
-    event.preventDefault();
-    event.stopPropagation();
-    checkbox.checked = !checkbox.checked;
-    toggleCaseSelection(testCase.localId, checkbox.checked, { focusCheckbox: true });
-  });
-  checkbox.addEventListener("keyup", stopCheckboxActivationKey);
   checkbox.addEventListener("change", (event) => {
     event.stopPropagation();
     toggleCaseSelection(testCase.localId, checkbox.checked);
@@ -1075,15 +1069,37 @@ function moveCaseSelectionWithKeyboard(currentLocalId, direction) {
 }
 
 function stopCheckboxActivationKey(event) {
-  if (!isCheckboxActivationKey(event.key)) {
+  if (!isCheckboxActivationKey(event.key, event.code)) {
     return;
   }
   event.preventDefault();
   event.stopPropagation();
 }
 
+function handleCaseListCheckboxKeydown(event) {
+  const checkbox = event.target.closest?.("[data-row-select-checkbox]");
+  if (!checkbox || !isCheckboxActivationKey(event.key, event.code)) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  const localId = checkbox.dataset.localId;
+  if (!localId) {
+    return;
+  }
+  toggleCaseSelection(localId, !checkbox.checked, { focusCheckbox: true });
+}
+
+function stopCaseListCheckboxKeyup(event) {
+  const checkbox = event.target.closest?.("[data-row-select-checkbox]");
+  if (!checkbox) {
+    return;
+  }
+  stopCheckboxActivationKey(event);
+}
+
 function handleSelectAllVisibleCheckboxKeydown(event) {
-  if (!isCheckboxActivationKey(event.key)) {
+  if (!isCheckboxActivationKey(event.key, event.code)) {
     return;
   }
   event.preventDefault();

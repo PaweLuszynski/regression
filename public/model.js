@@ -313,8 +313,8 @@ export function getKeyboardResizeDelta(key, { shiftKey = false } = {}) {
   return key === "ArrowLeft" || key === "ArrowUp" ? -amount : amount;
 }
 
-export function isCheckboxActivationKey(key) {
-  return key === " " || key === "Space" || key === "Spacebar";
+export function isCheckboxActivationKey(key, code = "") {
+  return key === " " || key === "Space" || key === "Spacebar" || code === "Space";
 }
 
 export function applyStatusToCase(cases, localId, status, updatedAt = new Date().toISOString()) {
