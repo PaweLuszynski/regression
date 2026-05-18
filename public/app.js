@@ -1043,7 +1043,7 @@ function caseListRow(testCase) {
   });
   checkbox.addEventListener("change", (event) => {
     event.stopPropagation();
-    toggleCaseSelection(testCase.localId, checkbox.checked);
+    toggleCaseSelection(testCase.localId, checkbox.checked, { focusCheckbox: true });
   });
 
   row.append(
