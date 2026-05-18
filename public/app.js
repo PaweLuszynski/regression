@@ -15,6 +15,7 @@ import {
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
+  isCheckboxActivationKey,
   isCaseVisibleByLocalId,
   getRunStatuses,
   groupCasesBySection,
@@ -129,6 +130,8 @@ elements.bulkApplyButton.addEventListener("click", applyBulkStatus);
 elements.bulkAppendNoteButton.addEventListener("click", appendBulkNote);
 elements.clearSelectionButton.addEventListener("click", clearSelection);
 elements.selectAllVisibleCheckbox.addEventListener("change", toggleAllVisibleSelection);
+elements.selectAllVisibleCheckbox.addEventListener("keydown", handleSelectAllVisibleCheckboxKeydown);
+elements.selectAllVisibleCheckbox.addEventListener("keyup", stopCheckboxActivationKey);
 elements.recoverUnsavedButton.addEventListener("click", recoverUnsavedChanges);
 elements.discardUnsavedButton.addEventListener("click", discardUnsavedChanges);
 window.addEventListener("mousemove", resizePanels);
@@ -1000,7 +1003,7 @@ function caseListRow(testCase) {
   }
   row.addEventListener("click", () => {
     state.selectedLocalId = testCase.localId;
-    render({ preserveScroll: true });
+    render({ preserveScroll: true, focusSelectedRow: true });
   });
   row.addEventListener("keydown", (event) => {
     if (event.target !== row) {
@@ -1016,7 +1019,7 @@ function caseListRow(testCase) {
     }
     event.preventDefault();
     state.selectedLocalId = testCase.localId;
-    render({ preserveScroll: true });
+    render({ preserveScroll: true, focusSelectedRow: true });
   });
 
   const checkbox = document.createElement("input");
@@ -1026,6 +1029,16 @@ function caseListRow(testCase) {
   checkbox.addEventListener("click", (event) => {
     event.stopPropagation();
   });
+  checkbox.addEventListener("keydown", (event) => {
+    if (!isCheckboxActivationKey(event.key)) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    checkbox.checked = !checkbox.checked;
+    toggleCaseSelection(testCase.localId, checkbox.checked);
+  });
+  checkbox.addEventListener("keyup", stopCheckboxActivationKey);
   checkbox.addEventListener("change", (event) => {
     event.stopPropagation();
     toggleCaseSelection(testCase.localId, checkbox.checked);
@@ -1051,6 +1064,24 @@ function moveCaseSelectionWithKeyboard(currentLocalId, direction) {
   }
   state.selectedLocalId = nextLocalId;
   render({ preserveScroll: true, scrollIntoView: true, focusSelectedRow: true });
+}
+
+function stopCheckboxActivationKey(event) {
+  if (!isCheckboxActivationKey(event.key)) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function handleSelectAllVisibleCheckboxKeydown(event) {
+  if (!isCheckboxActivationKey(event.key)) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  elements.selectAllVisibleCheckbox.checked = !elements.selectAllVisibleCheckbox.checked;
+  toggleAllVisibleSelection();
 }
 
 function handleTreeKeyboardNavigation(event, node) {
@@ -1590,6 +1621,7 @@ function resizePanelsWithKeyboard(event) {
     return;
   }
   event.preventDefault();
+  event.stopPropagation();
   state.panelWidths = resizePanelWidths(state.panelWidths, handle, deltaX);
   applyPanelWidths();
   savePanelWidths();

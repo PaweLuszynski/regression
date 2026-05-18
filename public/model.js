@@ -306,11 +306,15 @@ export function resizeCaseListColumns(widths, column, deltaX) {
 }
 
 export function getKeyboardResizeDelta(key, { shiftKey = false } = {}) {
-  if (key !== "ArrowLeft" && key !== "ArrowRight") {
+  if (!["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(key)) {
     return 0;
   }
   const amount = shiftKey ? keyboardResizeStepLarge : keyboardResizeStep;
-  return key === "ArrowLeft" ? -amount : amount;
+  return key === "ArrowLeft" || key === "ArrowUp" ? -amount : amount;
+}
+
+export function isCheckboxActivationKey(key) {
+  return key === " " || key === "Spacebar";
 }
 
 export function applyStatusToCase(cases, localId, status, updatedAt = new Date().toISOString()) {

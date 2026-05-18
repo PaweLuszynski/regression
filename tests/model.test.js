@@ -17,6 +17,7 @@ import {
   getRunStatuses,
   getStatusColor,
   getEffectiveStepStatus,
+  isCheckboxActivationKey,
   isCaseVisibleByLocalId,
   groupCasesBySection,
   normalizeRun,
@@ -296,11 +297,20 @@ test("resizeCaseListColumns updates one column while preserving other widths", (
   );
 });
 
-test("getKeyboardResizeDelta uses arrows only and supports larger shift steps", () => {
+test("getKeyboardResizeDelta uses arrow keys and supports larger shift steps", () => {
   assert.equal(getKeyboardResizeDelta("ArrowLeft"), -24);
   assert.equal(getKeyboardResizeDelta("ArrowRight"), 24);
+  assert.equal(getKeyboardResizeDelta("ArrowUp"), -24);
+  assert.equal(getKeyboardResizeDelta("ArrowDown"), 24);
   assert.equal(getKeyboardResizeDelta("ArrowRight", { shiftKey: true }), 72);
   assert.equal(getKeyboardResizeDelta("Enter"), 0);
+});
+
+test("isCheckboxActivationKey identifies Space without catching navigation keys", () => {
+  assert.equal(isCheckboxActivationKey(" "), true);
+  assert.equal(isCheckboxActivationKey("Spacebar"), true);
+  assert.equal(isCheckboxActivationKey("ArrowDown"), false);
+  assert.equal(isCheckboxActivationKey("Enter"), false);
 });
 
 test("getAdjacentVisibleCaseId returns neighboring visible cases without falling out of bounds", () => {
