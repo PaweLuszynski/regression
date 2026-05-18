@@ -832,6 +832,14 @@ function render(options = {}) {
       }
     }
 
+    if (options.focusCaseCheckboxId) {
+      const selector = `.case-list-row[data-local-id="${cssEscape(options.focusCaseCheckboxId)}"] input[type="checkbox"]`;
+      const selectedCheckbox = elements.caseList.querySelector(selector);
+      if (selectedCheckbox) {
+        selectedCheckbox.focus({ preventScroll: true });
+      }
+    }
+
     if (options.focusTreeNodeId) {
       const selector = `[data-tree-node-id="${cssEscape(options.focusTreeNodeId)}"]`;
       const selectedTreeButton = elements.treeRoot.querySelector(selector);
@@ -1036,7 +1044,7 @@ function caseListRow(testCase) {
     event.preventDefault();
     event.stopPropagation();
     checkbox.checked = !checkbox.checked;
-    toggleCaseSelection(testCase.localId, checkbox.checked);
+    toggleCaseSelection(testCase.localId, checkbox.checked, { focusCheckbox: true });
   });
   checkbox.addEventListener("keyup", stopCheckboxActivationKey);
   checkbox.addEventListener("change", (event) => {
@@ -1554,14 +1562,14 @@ function clearFilters() {
   render({ preserveScroll: true });
 }
 
-function toggleCaseSelection(localId, selected) {
+function toggleCaseSelection(localId, selected, options = {}) {
   withCaseListScrollPreserved(() => {
     if (selected) {
       state.selectedCaseIds.add(localId);
     } else {
       state.selectedCaseIds.delete(localId);
     }
-    render({ preserveScroll: true });
+    render({ preserveScroll: true, focusCaseCheckboxId: options.focusCheckbox ? localId : null });
   });
 }
 
