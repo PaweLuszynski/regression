@@ -308,6 +308,7 @@ test("getKeyboardResizeDelta uses arrow keys and supports larger shift steps", (
 
 test("isCheckboxActivationKey identifies Space without catching navigation keys", () => {
   assert.equal(isCheckboxActivationKey(" "), true);
+  assert.equal(isCheckboxActivationKey("Space"), true);
   assert.equal(isCheckboxActivationKey("Spacebar"), true);
   assert.equal(isCheckboxActivationKey("ArrowDown"), false);
   assert.equal(isCheckboxActivationKey("Enter"), false);

@@ -1605,6 +1605,7 @@ function startResizingPanels(event) {
   if (!handle) {
     return;
   }
+  event.currentTarget.focus({ preventScroll: true });
   state.activeResize = {
     handle,
     startX: event.clientX,
@@ -1654,6 +1655,7 @@ function startResizingCaseListColumn(event) {
   if (!column) {
     return;
   }
+  event.currentTarget.focus({ preventScroll: true });
   state.activeColumnResize = {
     column,
     startX: event.clientX,

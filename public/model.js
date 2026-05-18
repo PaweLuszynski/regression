@@ -314,7 +314,7 @@ export function getKeyboardResizeDelta(key, { shiftKey = false } = {}) {
 }
 
 export function isCheckboxActivationKey(key) {
-  return key === " " || key === "Spacebar";
+  return key === " " || key === "Space" || key === "Spacebar";
 }
 
 export function applyStatusToCase(cases, localId, status, updatedAt = new Date().toISOString()) {
