@@ -289,6 +289,7 @@ export function parseCsvRecords(text) {
   let value = "";
   let index = 0;
   let inQuotes = false;
+  let justClosedQuote = false;
 
   while (index < text.length) {
     const char = text[index];
@@ -300,6 +301,7 @@ export function parseCsvRecords(text) {
           continue;
         }
         inQuotes = false;
+        justClosedQuote = true;
         index += 1;
         continue;
       }
@@ -308,7 +310,20 @@ export function parseCsvRecords(text) {
       continue;
     }
 
+    if (justClosedQuote) {
+      if (char === " " || char === "\t") {
+        index += 1;
+        continue;
+      }
+      if (char !== "," && char !== "\n" && char !== "\r") {
+        throw new Error("Invalid CSV progress file: unexpected character after closing quote.");
+      }
+    }
+
     if (char === '"') {
+      if (value !== "") {
+        throw new Error("Invalid CSV progress file: unexpected quote in unquoted value.");
+      }
       inQuotes = true;
       index += 1;
       continue;
@@ -316,6 +331,7 @@ export function parseCsvRecords(text) {
     if (char === ",") {
       row.push(value);
       value = "";
+      justClosedQuote = false;
       index += 1;
       continue;
     }
@@ -324,6 +340,7 @@ export function parseCsvRecords(text) {
       records.push(row);
       row = [];
       value = "";
+      justClosedQuote = false;
       index += 1;
       continue;
     }

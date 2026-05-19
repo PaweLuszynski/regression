@@ -99,6 +99,24 @@ test("parseRunProgressJson rejects invalid JSON with a readable error", () => {
   );
 });
 
+test("parseRunProgressJson rejects empty JSON with a readable error", () => {
+  assert.throws(
+    () => parseRunProgressJson(""),
+    /Invalid JSON progress file/
+  );
+});
+
+test("parseRunProgressJson rejects unsupported schemas", () => {
+  assert.throws(
+    () => parseRunProgressJson(JSON.stringify({
+      schema: "another-progress-format",
+      schemaVersion: JSON_PROGRESS_SCHEMA_VERSION,
+      run: sampleRun()
+    })),
+    /Unsupported JSON progress schema/
+  );
+});
+
 test("parseRunProgressJson rejects incompatible progress schema", () => {
   assert.throws(
     () => parseRunProgressJson(JSON.stringify({
