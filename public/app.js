@@ -15,6 +15,7 @@ import {
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
+  getVisibleNavigationState,
   isCheckboxActivationKey,
   isCaseVisibleByLocalId,
   getRunStatuses,
@@ -1345,12 +1346,26 @@ function resultActions(testCase) {
   const wrapper = document.createElement("section");
   wrapper.className = "result-actions";
   wrapper.setAttribute("aria-label", "Execution actions");
+  const visibleIds = getVisibleCaseOrder(groupCasesBySection(filteredCases()));
+  const navigation = getVisibleNavigationState(testCase.localId, visibleIds);
+  const previousButton = document.createElement("button");
+  previousButton.type = "button";
+  previousButton.className = "result-button";
+  previousButton.textContent = "Previous";
+  previousButton.disabled = !navigation.hasPrevious;
+  previousButton.addEventListener("click", () => navigateToVisibleCase(navigation.previousId));
+  const nextButton = document.createElement("button");
+  nextButton.type = "button";
+  nextButton.className = "result-button";
+  nextButton.textContent = "Next";
+  nextButton.disabled = !navigation.hasNext;
+  nextButton.addEventListener("click", () => navigateToVisibleCase(navigation.nextId));
   const passNext = document.createElement("button");
   passNext.type = "button";
   passNext.className = "primary-action";
   passNext.textContent = "Pass & Next";
   passNext.addEventListener("click", () => updateCaseStatus(testCase.localId, "Passed", { advance: true }));
-  wrapper.append(passNext);
+  wrapper.append(previousButton, nextButton, passNext);
 
   for (const [label, status] of statusActionsForRun()) {
     const button = document.createElement("button");
@@ -1361,6 +1376,14 @@ function resultActions(testCase) {
     wrapper.append(button);
   }
   return wrapper;
+}
+
+function navigateToVisibleCase(localId) {
+  if (!localId) {
+    return;
+  }
+  state.selectedLocalId = localId;
+  render({ preserveScroll: true, scrollIntoView: true });
 }
 
 function editorBlock(title, field, testCase) {

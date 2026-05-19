@@ -14,6 +14,7 @@ import {
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
+  getVisibleNavigationState,
   getRunStatuses,
   getStatusColor,
   getEffectiveStepStatus,
@@ -372,6 +373,27 @@ test("getNextCaseId returns the next visible id or null for the last case", () =
   assert.equal(getNextCaseId("a", ["a", "b", "c"]), "b");
   assert.equal(getNextCaseId("c", ["a", "b", "c"]), null);
   assert.equal(getNextCaseId("missing", ["a", "b", "c"]), "a");
+});
+
+test("getVisibleNavigationState exposes previous and next visible cases", () => {
+  assert.deepEqual(getVisibleNavigationState("b", ["a", "b", "c"]), {
+    previousId: "a",
+    nextId: "c",
+    hasPrevious: true,
+    hasNext: true
+  });
+  assert.deepEqual(getVisibleNavigationState("a", ["a", "b", "c"]), {
+    previousId: null,
+    nextId: "b",
+    hasPrevious: false,
+    hasNext: true
+  });
+  assert.deepEqual(getVisibleNavigationState("missing", ["a", "b"]), {
+    previousId: null,
+    nextId: "a",
+    hasPrevious: false,
+    hasNext: true
+  });
 });
 
 test("isCaseVisibleByLocalId checks the current visible case set by stable local id", () => {

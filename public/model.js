@@ -371,6 +371,28 @@ export function getAdjacentVisibleCaseId(currentCaseId, visibleCaseIds, directio
   return ids[nextIndex] || null;
 }
 
+export function getVisibleNavigationState(currentCaseId, visibleCaseIds) {
+  const ids = Array.isArray(visibleCaseIds) ? visibleCaseIds.filter(Boolean) : [];
+  if (ids.length === 0) {
+    return {
+      previousId: null,
+      nextId: null,
+      hasPrevious: false,
+      hasNext: false
+    };
+  }
+  const index = ids.indexOf(currentCaseId);
+  const resolvedIndex = index < 0 ? -1 : index;
+  const previousId = resolvedIndex > 0 ? ids[resolvedIndex - 1] : null;
+  const nextId = resolvedIndex < 0 ? ids[0] : ids[resolvedIndex + 1] || null;
+  return {
+    previousId,
+    nextId,
+    hasPrevious: Boolean(previousId),
+    hasNext: Boolean(nextId)
+  };
+}
+
 export function isCaseVisibleByLocalId(cases, localId) {
   return Array.isArray(cases) && cases.some((testCase) => testCase?.localId === localId);
 }
