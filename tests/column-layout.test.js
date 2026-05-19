@@ -30,7 +30,10 @@ test("case list readable columns do not wrap character-by-character", () => {
 
 test("case list column resizers remain keyboard focusable and visible", () => {
   assert.match(cssRule(".case-column-resizer"), /cursor:\s*col-resize/);
-  assert.match(cssRule(".resize-handle:focus-visible,\n.case-column-resizer:focus-visible"), /outline:\s*2px solid var\(--accent\)/);
+  assert.ok(
+    cssSelectorHasDeclaration(".case-column-resizer:focus-visible", /outline:\s*2px solid var\(--accent\)/),
+    "Expected case column resizers to have a visible keyboard focus outline"
+  );
 });
 
 function cssRule(selector) {
@@ -38,6 +41,17 @@ function cssRule(selector) {
   const match = styles.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "m"));
   assert.ok(match, `Expected CSS rule for ${selector}`);
   return match[1];
+}
+
+function cssSelectorHasDeclaration(selector, declarationPattern) {
+  const escapedSelector = escapeRegExp(selector);
+  const rulePattern = new RegExp(`([^{}]*${escapedSelector}[^{}]*)\\{([\\s\\S]*?)\\}`, "gm");
+  for (const match of styles.matchAll(rulePattern)) {
+    if (declarationPattern.test(match[2])) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function escapeRegExp(value) {
