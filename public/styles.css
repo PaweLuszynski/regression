@@ -1094,6 +1094,24 @@ body.resizing-columns .case-column-resizer::after {
   border-color: currentColor;
 }
 
+.result-button:not(:disabled):hover {
+  background: #edf7fa;
+  border-color: var(--accent);
+}
+
+.result-button:disabled {
+  background: color-mix(in srgb, var(--panel) 72%, #eef2f6);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.result-button:disabled:hover {
+  background: color-mix(in srgb, var(--panel) 72%, #eef2f6);
+  border-color: var(--border);
+}
+
 .control-label span,
 .editor-block span {
   color: var(--muted);
