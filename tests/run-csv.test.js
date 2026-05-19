@@ -10,6 +10,20 @@ test("parseCsvRecords handles quoted commas and line breaks", () => {
   assert.equal(records[2][1], "Line 1\nLine 2");
 });
 
+test("parseCsvRecords rejects characters after a closing quote", () => {
+  assert.throws(
+    () => parseCsvRecords('ID,Title,Status\nT1,"Bad"quote,Passed\n'),
+    /unexpected character after closing quote/i
+  );
+});
+
+test("parseCsvRecords rejects unclosed quoted values", () => {
+  assert.throws(
+    () => parseCsvRecords('ID,Title,Status\nT1,"Bad quote,Passed\n'),
+    /quoted value was not closed/i
+  );
+});
+
 test("parseRunProgressCsv restores current and original statuses separately", () => {
   const csv = [
     "Run ID,Run Name,Sheet Name,Source File Name,ID,Case ID,Title,Section,Section Hierarchy,Original Status,Current Status,Local Notes,Local Defects,Local Evidence,Updated At",
@@ -98,6 +112,13 @@ test("parseRunProgressCsv rejects empty csv", () => {
   assert.throws(
     () => parseRunProgressCsv(""),
     /no rows were detected/
+  );
+});
+
+test("parseRunProgressCsv rejects header-only csv", () => {
+  assert.throws(
+    () => parseRunProgressCsv("ID,Title,Current Status\n"),
+    /no test case rows were detected/
   );
 });
 
