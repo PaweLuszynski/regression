@@ -200,6 +200,19 @@ export function latestRunTimestamp(run) {
   return valid.length ? Math.max(...valid) : null;
 }
 
+export function getRunSafetyTimestamps(run, exportHistory = {}) {
+  const runId = run?.id;
+  const savedAt = run?.savedAt || latestKnownIsoTimestamp(run);
+  const exportRecord = runId && exportHistory && typeof exportHistory === "object"
+    ? exportHistory[runId]
+    : null;
+  return {
+    savedAt,
+    exportedAt: typeof exportRecord === "string" ? exportRecord : stringValue(exportRecord?.exportedAt),
+    exportType: typeof exportRecord === "object" && exportRecord ? stringValue(exportRecord.type) : ""
+  };
+}
+
 export function sortSavedRuns(runs, sortKey = "newest") {
   const items = Array.isArray(runs) ? [...runs] : [];
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -220,6 +233,15 @@ export function sortSavedRuns(runs, sortKey = "newest") {
   });
 
   return items;
+}
+
+function latestKnownIsoTimestamp(run) {
+  const timestamp = latestRunTimestamp(run);
+  return timestamp ? new Date(timestamp).toISOString() : "";
+}
+
+function stringValue(value) {
+  return value == null ? "" : String(value);
 }
 
 export function getNextSavedRunIdAfterDeletion(runs, deletedRunId, activeRunId, sortKey = "newest") {

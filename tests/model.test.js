@@ -11,6 +11,7 @@ import {
   getAdjacentVisibleCaseId,
   getKeyboardResizeDelta,
   getNextSavedRunIdAfterDeletion,
+  getRunSafetyTimestamps,
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
@@ -540,6 +541,33 @@ test("latestRunTimestamp returns most recent valid timestamp from run fields", (
   });
 
   assert.equal(timestamp, Date.parse("2026-05-06T12:00:00.000Z"));
+});
+
+test("getRunSafetyTimestamps reports latest save and browser-local export state", () => {
+  const run = {
+    id: "run-1",
+    importedAt: "2026-05-06T09:00:00.000Z",
+    savedAt: "2026-05-06T12:00:00.000Z",
+    cases: [{ updatedAt: "2026-05-06T10:00:00.000Z" }]
+  };
+
+  assert.deepEqual(getRunSafetyTimestamps(run, {
+    "run-1": { exportedAt: "2026-05-06T13:00:00.000Z", type: "csv" }
+  }), {
+    savedAt: "2026-05-06T12:00:00.000Z",
+    exportedAt: "2026-05-06T13:00:00.000Z",
+    exportType: "csv"
+  });
+});
+
+test("getRunSafetyTimestamps falls back to latest run timestamp when savedAt is missing", () => {
+  const run = {
+    id: "run-2",
+    importedAt: "2026-05-06T09:00:00.000Z",
+    cases: [{ updatedAt: "2026-05-06T10:00:00.000Z" }]
+  };
+
+  assert.equal(getRunSafetyTimestamps(run, {}).savedAt, "2026-05-06T10:00:00.000Z");
 });
 
 test("normalizeRun materializes available statuses and editable step state", () => {

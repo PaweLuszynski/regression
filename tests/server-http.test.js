@@ -153,6 +153,92 @@ test("HTTP CSV import saves and reloads UI-visible local step statuses", async (
   assert.equal(openPayload.run.cases[0].steps[1].currentStatus, "Failed");
 });
 
+test("HTTP JSON restore failure leaves existing saved run unchanged", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-json-invalid-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const run = {
+    id: "R903_Worksheet",
+    sourceFileName: "restore.json",
+    sheetName: "Worksheet",
+    runName: "JSON Restore",
+    runId: "R903",
+    importedAt: "2026-05-15T10:00:00.000Z",
+    columns: [{ index: 0, name: "ID", key: "ID" }],
+    cases: [{
+      localId: "T903",
+      testId: "T903",
+      caseId: "C903",
+      title: "Keep existing JSON",
+      originalStatus: "Untested",
+      currentStatus: "Passed",
+      localNotes: "keep me",
+      updatedAt: "2026-05-15T10:01:00.000Z",
+      rawRow: { ID: "T903", Status: "Untested" },
+      steps: []
+    }]
+  };
+
+  const firstImport = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(run)
+  });
+  assert.equal(firstImport.status, 201);
+
+  const invalidImport = await fetch(`${baseUrl}/api/import-json`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: "{not-json"
+  });
+  const invalidPayload = await invalidImport.json();
+  assert.equal(invalidImport.status, 400);
+  assert.match(invalidPayload.error, /Invalid JSON progress file/);
+
+  const savedFile = JSON.parse(await readFile(progressPath(progressDir, run.id), "utf8"));
+  assert.equal(savedFile.cases[0].currentStatus, "Passed");
+  assert.equal(savedFile.cases[0].localNotes, "keep me");
+});
+
+test("HTTP CSV restore failure leaves existing saved run unchanged", async (t) => {
+  const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-csv-invalid-"));
+  const { server, baseUrl } = await startTestServer(progressDir);
+  t.after(() => server.close());
+
+  const csv = [
+    "Run ID,Run Name,Sheet Name,Source File Name,ID,Title,Current Status,Local Notes",
+    "R904,CSV Restore,Worksheet,restore.csv,T904,Keep existing CSV,Passed,keep me"
+  ].join("\n");
+
+  const firstImport = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: csv
+  });
+  const firstPayload = await firstImport.json();
+  assert.equal(firstImport.status, 201);
+
+  const invalidImport = await fetch(`${baseUrl}/api/import-csv`, {
+    method: "POST",
+    headers: {
+      "content-type": "text/csv",
+      "x-file-name": encodeURIComponent("restore.csv")
+    },
+    body: 'ID,Title,Current Status\nT904,"Bad"quote,Failed'
+  });
+  const invalidPayload = await invalidImport.json();
+  assert.equal(invalidImport.status, 400);
+  assert.match(invalidPayload.error, /Invalid CSV progress file/);
+
+  const savedFile = JSON.parse(await readFile(progressPath(progressDir, firstPayload.run.id), "utf8"));
+  assert.equal(savedFile.cases[0].currentStatus, "Passed");
+  assert.equal(savedFile.cases[0].localNotes, "keep me");
+});
+
 test("HTTP JSON import requires resume or replace decision before overwriting saved progress", async (t) => {
   const progressDir = await mkdtemp(path.join(os.tmpdir(), "regression-http-json-collision-"));
   const { server, baseUrl } = await startTestServer(progressDir);

@@ -319,6 +319,142 @@ test("falls back to rich duplicate Steps when explicit step columns are empty", 
   assert.equal(run.cases[0].stepsExpectedResult, "");
 });
 
+test("keeps duplicate non-step headers stable and maps from the first header", async () => {
+  const duplicateHeaders = [
+    "ID",
+    "Title",
+    "Status",
+    "Priority",
+    "Priority",
+    "Run",
+    "Run ID"
+  ];
+  const workbook = createWorkbook([
+    duplicateHeaders,
+    ["T6000", "Duplicate priority", "Untested", "High", "Secondary priority note", "Run", "R6"]
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "duplicate-headers.xlsx"
+  });
+
+  assert.deepEqual(run.columns.map((column) => column.key), [
+    "ID",
+    "Title",
+    "Status",
+    "Priority",
+    "Priority__2",
+    "Run",
+    "Run ID"
+  ]);
+  assert.equal(run.cases[0].priority, "High");
+  assert.equal(run.cases[0].rawRow.Priority, "High");
+  assert.equal(run.cases[0].rawRow.Priority__2, "Secondary priority note");
+});
+
+test("imports rows with missing optional columns without crashing", async () => {
+  const minimalHeaders = ["ID", "Title", "Status", "Run", "Run ID"];
+  const workbook = createWorkbook([
+    minimalHeaders,
+    ["T6100", "Minimal case", "Passed", "Minimal Run", "R61"]
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "minimal.xlsx"
+  });
+
+  assert.equal(run.runName, "Minimal Run");
+  assert.equal(run.runId, "R61");
+  assert.equal(run.cases[0].testId, "T6100");
+  assert.equal(run.cases[0].currentStatus, "Passed");
+  assert.equal(run.cases[0].assignedTo, "");
+  assert.equal(run.cases[0].steps.length, 0);
+});
+
+test("normalizes HTML-like content to safe readable text", async () => {
+  const workbook = createWorkbook([
+    headers,
+    [
+      "T6200",
+      "<strong>HTML title</strong>",
+      "",
+      "",
+      "",
+      "C620",
+      "<p>Imported <strong>comment</strong><br>Line two</p><script>alert(1)</script>",
+      "",
+      "<p>Expected <em>result</em></p>",
+      "<ul><li>First condition</li><li>Second condition</li></ul>",
+      "Medium",
+      "",
+      "HTML Run",
+      "R62",
+      "Section",
+      "Plan > Section",
+      "Untested",
+      "",
+      "",
+      "",
+      "Template",
+      "",
+      "",
+      "Functional"
+    ]
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "html-like.xlsx"
+  });
+
+  assert.equal(run.cases[0].title, "HTML title");
+  assert.equal(run.cases[0].importedComment, "Imported comment\nLine two\nalert(1)");
+  assert.equal(run.cases[0].expectedResult, "Expected result");
+  assert.equal(run.cases[0].preconditions, "- First condition\n- Second condition");
+});
+
+test("skips empty worksheet rows while preserving raw columns for data rows", async () => {
+  const workbook = createWorkbook([
+    headers,
+    Array(headers.length).fill(""),
+    [
+      "T6300",
+      "Kept row",
+      "",
+      "",
+      "QA",
+      "C630",
+      "",
+      "",
+      "",
+      "",
+      "Low",
+      "",
+      "Row Run",
+      "R63",
+      "Section",
+      "Plan > Section",
+      "Untested",
+      "",
+      "",
+      "",
+      "Template",
+      "",
+      "",
+      "Functional"
+    ],
+    Array(headers.length).fill("")
+  ]);
+
+  const run = await parseTestRailRunFromBuffer(workbook, {
+    sourceFileName: "empty-rows.xlsx"
+  });
+
+  assert.equal(run.cases.length, 1);
+  assert.equal(run.cases[0].testId, "T6300");
+  assert.equal(run.cases[0].rawRow.ID, "T6300");
+  assert.equal(run.cases[0].rawRow.Priority, "Low");
+});
+
 test("inspects multi-sheet workbooks and requires explicit selection when multiple sheets are usable", async () => {
   const workbook = createWorkbook([
     { name: "Smoke", rows: [headers, ["T1", "Smoke case", "", "", "", "C1", "", "", "", "", "", "", "Smoke Run", "R1", "Section", "Plan > Smoke", "Untested", "", "", "", "", "", "", "Functional"]] },

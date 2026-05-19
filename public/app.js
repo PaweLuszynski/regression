@@ -12,6 +12,7 @@ import {
   getNextCaseId,
   getNextSavedRunIdAfterDeletion,
   getKeyboardResizeDelta,
+  getRunSafetyTimestamps,
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
@@ -37,6 +38,7 @@ const layoutStorageKey = "testrailLocalViewer.panelWidths.v1";
 const caseListColumnsStorageKey = "testrailLocalViewer.caseListColumns.v1";
 const savedRunsCollapsedStorageKey = "testrailLocalViewer.savedRunsCollapsed.v1";
 const savedRunsSortStorageKey = "testrailLocalViewer.savedRunsSort.v1";
+const exportHistoryStorageKey = "testrailLocalViewer.exportHistory.v1";
 const unsavedRunPrefix = "testrailLocalViewer.unsavedRun.v1.";
 const defaultRunMetaText = "Import a TestRail XLSX run export to continue locally.";
 const importAcceptByType = {
@@ -59,6 +61,7 @@ const state = {
   savedRuns: [],
   savedRunsCollapsed: loadSavedRunsCollapsed(),
   savedRunsSort: loadSavedRunsSort(),
+  exportHistory: loadExportHistory(),
   filters: {
     search: "",
     currentStatus: "",
@@ -77,6 +80,7 @@ const elements = {
   exportMenuSummary: document.querySelector("#exportMenuSummary"),
   menuControls: [...document.querySelectorAll(".menu-control")],
   runMeta: document.querySelector("#runMeta"),
+  runSafetyStatus: document.querySelector("#runSafetyStatus"),
   saveState: document.querySelector("#saveState"),
   saveStateActions: document.querySelector("#saveStateActions"),
   recoverUnsavedButton: document.querySelector("#recoverUnsavedButton"),
@@ -782,6 +786,8 @@ function clearActiveRun() {
   state.pendingRecoveredRun = null;
   resetFilterOptions();
   elements.runMeta.textContent = defaultRunMetaText;
+  elements.runSafetyStatus.hidden = true;
+  elements.runSafetyStatus.textContent = "";
   elements.saveState.hidden = true;
   setSaveStateActions();
   render({ preserveScroll: true });
@@ -819,6 +825,7 @@ function render(options = {}) {
 
   const doRender = () => {
     elements.runMeta.textContent = `${run.runName || "Imported run"} · ${run.runId || "No run ID"} · ${run.sheetName} · ${run.cases.length} tests`;
+    renderRunSafetyStatus();
     renderSummary(run.cases);
     const visibleCases = filteredCases();
     pruneSelection();
@@ -1819,6 +1826,30 @@ function loadSavedRunsSort() {
   return normalizeSavedRunsSort(localStorage.getItem(savedRunsSortStorageKey) || "newest");
 }
 
+function loadExportHistory() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(exportHistoryStorageKey) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function recordExport(type) {
+  if (!state.run?.id) {
+    return;
+  }
+  state.exportHistory = {
+    ...state.exportHistory,
+    [state.run.id]: {
+      type,
+      exportedAt: new Date().toISOString()
+    }
+  };
+  localStorage.setItem(exportHistoryStorageKey, JSON.stringify(state.exportHistory));
+  renderRunSafetyStatus();
+}
+
 function normalizeSavedRunsSort(value) {
   return ["newest", "oldest", "run-name", "run-id"].includes(value) ? value : "newest";
 }
@@ -1861,6 +1892,7 @@ function exportJson() {
     return;
   }
   closeMenus();
+  recordExport("json");
   window.location.href = `/api/runs/${encodeURIComponent(state.run.id)}/export`;
 }
 
@@ -1876,6 +1908,7 @@ function exportCsv() {
   anchor.download = `${state.run.id}.csv`;
   anchor.click();
   URL.revokeObjectURL(url);
+  recordExport("csv");
 }
 
 function fillSelect(select, label, values) {
@@ -1953,6 +1986,20 @@ function setSaveState(type, text) {
   elements.saveState.hidden = false;
   elements.saveState.textContent = text;
   elements.saveState.className = `save-state ${type}`;
+  renderRunSafetyStatus();
+}
+
+function renderRunSafetyStatus() {
+  if (!elements.runSafetyStatus || !state.run) {
+    return;
+  }
+  const { savedAt, exportedAt, exportType } = getRunSafetyTimestamps(state.run, state.exportHistory);
+  const savedText = savedAt ? `Last local save: ${formatDateTime(savedAt)}` : "Last local save: not saved yet";
+  const exportText = exportedAt
+    ? `Last export: ${formatDateTime(exportedAt)}${exportType ? ` (${exportType.toUpperCase()})` : ""}`
+    : "Last export: not exported in this browser";
+  elements.runSafetyStatus.hidden = false;
+  elements.runSafetyStatus.textContent = `${savedText} · ${exportText}`;
 }
 
 function setSaveStateActions({ showRecover = false, showDiscard = false } = {}) {
