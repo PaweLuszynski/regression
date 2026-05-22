@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   appendNoteToCases,
+  applyStepStatusRangeToCase,
   applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
@@ -369,6 +370,53 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   assert.equal(cases[0].steps[0].currentStatus, "Passed");
   assert.equal(cases[0].steps[0].localCurrentStatus, "Passed");
   assert.equal(cases[0].updatedAt, "now");
+});
+
+test("applyStepStatusRangeToCase passes a step range without overwriting imported statuses", () => {
+  const cases = [{
+    localId: "a",
+    currentStatus: "Untested",
+    steps: [
+      { status: "Untested", currentStatus: "Untested", localCurrentStatus: "" },
+      { status: "Untested", currentStatus: "Failed", localCurrentStatus: "Failed" },
+      { status: "Untested", currentStatus: "Untested", localCurrentStatus: "" }
+    ],
+    updatedAt: "old"
+  }];
+
+  const result = applyStepStatusRangeToCase(cases, "a", 0, 1, "Passed", "now", {
+    updateCaseWhenAllMatch: true
+  });
+
+  assert.deepEqual(result, { changed: 2, caseStatusUpdated: false });
+  assert.equal(cases[0].steps[0].status, "Untested");
+  assert.equal(cases[0].steps[0].currentStatus, "Passed");
+  assert.equal(cases[0].steps[1].status, "Untested");
+  assert.equal(cases[0].steps[1].localCurrentStatus, "Passed");
+  assert.equal(cases[0].steps[2].currentStatus, "Untested");
+  assert.equal(cases[0].currentStatus, "Untested");
+  assert.equal(cases[0].updatedAt, "now");
+});
+
+test("applyStepStatusRangeToCase can mark the case passed when all steps pass", () => {
+  const cases = [{
+    localId: "a",
+    currentStatus: "Failed",
+    steps: [
+      { status: "Untested", currentStatus: "Passed", localCurrentStatus: "Passed" },
+      { status: "Untested", currentStatus: "Untested", localCurrentStatus: "" }
+    ],
+    updatedAt: "old"
+  }];
+
+  const result = applyStepStatusRangeToCase(cases, "a", 1, 99, "Passed", "now", {
+    updateCaseWhenAllMatch: true
+  });
+
+  assert.deepEqual(result, { changed: 1, caseStatusUpdated: true });
+  assert.equal(cases[0].currentStatus, "Passed");
+  assert.equal(cases[0].steps[1].status, "Untested");
+  assert.equal(cases[0].steps[1].currentStatus, "Passed");
 });
 
 test("getStepNavigationState clamps current step and exposes controls", () => {

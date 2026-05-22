@@ -1203,6 +1203,15 @@ pre {
   padding: 6px 10px;
 }
 
+.step-batch-button {
+  font-weight: 800;
+  border-color: var(--accent);
+}
+
+.step-batch-button:not(:disabled):hover {
+  background: #edf7fa;
+}
+
 .step-nav-button:disabled {
   background: color-mix(in srgb, var(--panel) 72%, #eef2f6);
   border-color: var(--border);

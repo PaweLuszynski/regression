@@ -368,6 +368,41 @@ export function applyStepStatusToCase(cases, localId, stepIndex, status, updated
   return { changed: 1 };
 }
 
+export function applyStepStatusRangeToCase(
+  cases,
+  localId,
+  startIndex,
+  endIndex,
+  status,
+  updatedAt = new Date().toISOString(),
+  options = {}
+) {
+  const testCase = (Array.isArray(cases) ? cases : []).find((item) => item.localId === localId);
+  if (!testCase || !Array.isArray(testCase.steps) || testCase.steps.length === 0 || !status) {
+    return { changed: 0, caseStatusUpdated: false };
+  }
+  const first = Math.max(0, Math.min(Number(startIndex) || 0, testCase.steps.length - 1));
+  const last = Math.max(first, Math.min(Number(endIndex) || 0, testCase.steps.length - 1));
+  let changed = 0;
+  for (let index = first; index <= last; index += 1) {
+    const step = testCase.steps[index];
+    if (step.currentStatus !== status || step.localCurrentStatus !== status) {
+      step.currentStatus = status;
+      step.localCurrentStatus = status;
+      changed += 1;
+    }
+  }
+  let caseStatusUpdated = false;
+  if (options.updateCaseWhenAllMatch && testCase.steps.every((step) => getEffectiveStepStatus(step) === status)) {
+    caseStatusUpdated = testCase.currentStatus !== status;
+    testCase.currentStatus = status;
+  }
+  if (changed > 0 || caseStatusUpdated) {
+    testCase.updatedAt = updatedAt;
+  }
+  return { changed, caseStatusUpdated };
+}
+
 export function getStepNavigationState(currentIndex, stepCount) {
   const count = Math.max(0, Number(stepCount) || 0);
   if (count === 0) {

@@ -2,6 +2,7 @@ import { classifyProgressImportResponse, classifyXlsxImportResponse, shouldSkipR
 import { buildCsvExport } from "./run-export.js";
 import {
   appendNoteToCases,
+  applyStepStatusRangeToCase,
   applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
@@ -1246,7 +1247,7 @@ function stepsTable(testCase) {
   }
 
   const activeStep = activeStepNavigation(testCase.localId, rows.length);
-  wrapper.append(stepExecutionControls(testCase.localId, activeStep));
+  wrapper.append(stepExecutionControls(testCase.localId, activeStep, rows.length));
 
   const hasStepStatus = rows.length > 0;
   const hasExtras = rows.some((row) => row.additionalInfo || row.references);
@@ -1319,7 +1320,7 @@ function activeStepNavigation(localId, stepCount) {
   return navigation;
 }
 
-function stepExecutionControls(localId, navigation) {
+function stepExecutionControls(localId, navigation, stepCount) {
   const controls = document.createElement("div");
   controls.className = "step-execution-controls";
   controls.setAttribute("aria-label", "Step-by-step execution");
@@ -1339,7 +1340,21 @@ function stepExecutionControls(localId, navigation) {
   next.disabled = !navigation.hasNext;
   next.addEventListener("click", () => navigateStep(localId, 1));
 
-  controls.append(label, previous, next);
+  const passUntilHere = document.createElement("button");
+  passUntilHere.type = "button";
+  passUntilHere.className = "step-nav-button step-batch-button";
+  passUntilHere.textContent = "Pass until here";
+  passUntilHere.disabled = !availableStatuses().includes("Passed");
+  passUntilHere.addEventListener("click", () => updateCaseStepRange(localId, 0, navigation.currentIndex));
+
+  const passRemaining = document.createElement("button");
+  passRemaining.type = "button";
+  passRemaining.className = "step-nav-button step-batch-button";
+  passRemaining.textContent = "Pass remaining steps";
+  passRemaining.disabled = !availableStatuses().includes("Passed") || stepCount === 0;
+  passRemaining.addEventListener("click", () => updateCaseStepRange(localId, navigation.currentIndex, stepCount - 1));
+
+  controls.append(label, previous, next, passUntilHere, passRemaining);
   return controls;
 }
 
@@ -1520,6 +1535,31 @@ async function updateCaseStepStatus(localId, stepIndex, status) {
   try {
     await saveProgress();
     showMessage(`Updated step status to ${status || "blank"}.`, "success");
+    await loadSavedRuns();
+  } catch (error) {
+    showMessage(error.message, "error");
+  }
+}
+
+async function updateCaseStepRange(localId, startIndex, endIndex) {
+  const result = applyStepStatusRangeToCase(
+    state.run.cases,
+    localId,
+    startIndex,
+    endIndex,
+    "Passed",
+    new Date().toISOString(),
+    { updateCaseWhenAllMatch: true }
+  );
+  if (result.changed === 0 && !result.caseStatusUpdated) {
+    showMessage("No step statuses needed updating.", "warning");
+    return;
+  }
+  render({ preserveScroll: true, preserveDetailScroll: true });
+  try {
+    await saveProgress();
+    const suffix = result.caseStatusUpdated ? " Case status is now Passed." : "";
+    showMessage(`Updated ${result.changed} step status${result.changed === 1 ? "" : "es"} to Passed.${suffix}`, "success");
     await loadSavedRuns();
   } catch (error) {
     showMessage(error.message, "error");
