@@ -213,6 +213,26 @@ export function getRunSafetyTimestamps(run, exportHistory = {}) {
   };
 }
 
+export function normalizeRunResumeContext(context, run) {
+  const validCaseIds = new Set((Array.isArray(run?.cases) ? run.cases : []).map((testCase) => testCase?.localId).filter(Boolean));
+  const selectedLocalId = validCaseIds.has(context?.selectedLocalId)
+    ? context.selectedLocalId
+    : (validCaseIds.values().next().value || null);
+  return {
+    selectedLocalId,
+    filters: normalizeResumeFilters(context?.filters),
+    expandedFolders: normalizeStringList(context?.expandedFolders),
+    scroll: {
+      caseListTop: nonNegativeNumber(context?.scroll?.caseListTop),
+      caseListLeft: nonNegativeNumber(context?.scroll?.caseListLeft),
+      detailTop: nonNegativeNumber(context?.scroll?.detailTop),
+      detailLeft: nonNegativeNumber(context?.scroll?.detailLeft)
+    },
+    panelWidths: sanitizePanelWidths(context?.panelWidths),
+    caseListColumns: sanitizeCaseListColumns(context?.caseListColumns)
+  };
+}
+
 export function sortSavedRuns(runs, sortKey = "newest") {
   const items = Array.isArray(runs) ? [...runs] : [];
   const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -242,6 +262,39 @@ function latestKnownIsoTimestamp(run) {
 
 function stringValue(value) {
   return value == null ? "" : String(value);
+}
+
+function normalizeResumeFilters(filters = {}) {
+  return {
+    search: stringValue(filters.search),
+    currentStatus: stringValue(filters.currentStatus),
+    originalStatus: stringValue(filters.originalStatus),
+    priority: stringValue(filters.priority),
+    section: stringValue(filters.section),
+    assignedTo: stringValue(filters.assignedTo)
+  };
+}
+
+function normalizeStringList(values) {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  const normalized = [];
+  const seen = new Set();
+  for (const value of values) {
+    const text = stringValue(value);
+    if (!text || seen.has(text)) {
+      continue;
+    }
+    seen.add(text);
+    normalized.push(text);
+  }
+  return normalized;
+}
+
+function nonNegativeNumber(value) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.round(parsed)) : 0;
 }
 
 export function getNextSavedRunIdAfterDeletion(runs, deletedRunId, activeRunId, sortKey = "newest") {

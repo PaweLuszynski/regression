@@ -12,6 +12,7 @@ import {
   getKeyboardResizeDelta,
   getNextSavedRunIdAfterDeletion,
   getRunSafetyTimestamps,
+  normalizeRunResumeContext,
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
@@ -27,6 +28,8 @@ import {
   sortSavedRuns,
   resizeCaseListColumns,
   resizePanelWidths,
+  caseListColumnMinimums,
+  panelMinimums,
   sanitizeCaseListColumns,
   sanitizePanelWidths,
   parseSteps
@@ -568,6 +571,83 @@ test("getRunSafetyTimestamps falls back to latest run timestamp when savedAt is 
   };
 
   assert.equal(getRunSafetyTimestamps(run, {}).savedAt, "2026-05-06T10:00:00.000Z");
+});
+
+test("normalizeRunResumeContext restores valid UI context and clamps layout values", () => {
+  const context = normalizeRunResumeContext({
+    selectedLocalId: "case-2",
+    filters: {
+      search: "billing",
+      currentStatus: "Failed",
+      originalStatus: "Untested",
+      priority: "High",
+      section: "Checkout",
+      assignedTo: "Tester"
+    },
+    expandedFolders: ["root", "root", "", "checkout"],
+    scroll: {
+      caseListTop: 120.4,
+      caseListLeft: -10,
+      detailTop: 80,
+      detailLeft: "12"
+    },
+    panelWidths: {
+      tree: 100,
+      list: 820,
+      detail: 900
+    },
+    caseListColumns: {
+      id: 30,
+      title: 640,
+      status: 40
+    }
+  }, {
+    cases: [
+      { localId: "case-1" },
+      { localId: "case-2" }
+    ]
+  });
+
+  assert.equal(context.selectedLocalId, "case-2");
+  assert.deepEqual(context.filters, {
+    search: "billing",
+    currentStatus: "Failed",
+    originalStatus: "Untested",
+    priority: "High",
+    section: "Checkout",
+    assignedTo: "Tester"
+  });
+  assert.deepEqual(context.expandedFolders, ["root", "checkout"]);
+  assert.deepEqual(context.scroll, {
+    caseListTop: 120,
+    caseListLeft: 0,
+    detailTop: 80,
+    detailLeft: 12
+  });
+  assert.equal(context.panelWidths.tree, panelMinimums.tree);
+  assert.equal(context.panelWidths.list, 820);
+  assert.equal(context.caseListColumns.id, caseListColumnMinimums.id);
+  assert.equal(context.caseListColumns.title, 640);
+});
+
+test("normalizeRunResumeContext falls back when selected case is missing", () => {
+  const context = normalizeRunResumeContext({
+    selectedLocalId: "missing",
+    filters: {
+      search: "still restored"
+    },
+    scroll: {
+      caseListTop: Number.NaN
+    }
+  }, {
+    cases: [
+      { localId: "first" }
+    ]
+  });
+
+  assert.equal(context.selectedLocalId, "first");
+  assert.equal(context.filters.search, "still restored");
+  assert.equal(context.scroll.caseListTop, 0);
 });
 
 test("normalizeRun materializes available statuses and editable step state", () => {

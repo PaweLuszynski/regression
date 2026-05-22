@@ -13,6 +13,7 @@ import {
   getNextSavedRunIdAfterDeletion,
   getKeyboardResizeDelta,
   getRunSafetyTimestamps,
+  normalizeRunResumeContext,
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
@@ -39,6 +40,7 @@ const caseListColumnsStorageKey = "testrailLocalViewer.caseListColumns.v1";
 const savedRunsCollapsedStorageKey = "testrailLocalViewer.savedRunsCollapsed.v1";
 const savedRunsSortStorageKey = "testrailLocalViewer.savedRunsSort.v1";
 const exportHistoryStorageKey = "testrailLocalViewer.exportHistory.v1";
+const resumeContextPrefix = "testrailLocalViewer.resumeContext.v1.";
 const unsavedRunPrefix = "testrailLocalViewer.unsavedRun.v1.";
 const defaultRunMetaText = "Import a TestRail XLSX run export to continue locally.";
 const importAcceptByType = {
@@ -62,6 +64,7 @@ const state = {
   savedRunsCollapsed: loadSavedRunsCollapsed(),
   savedRunsSort: loadSavedRunsSort(),
   exportHistory: loadExportHistory(),
+  resumeContextSaveFrame: null,
   filters: {
     search: "",
     currentStatus: "",
@@ -139,6 +142,8 @@ elements.selectAllVisibleCheckbox.addEventListener("keydown", handleSelectAllVis
 elements.selectAllVisibleCheckbox.addEventListener("keyup", stopCheckboxActivationKey);
 elements.caseList.addEventListener("keydown", handleCaseListCheckboxKeydown, true);
 elements.caseList.addEventListener("keyup", stopCaseListCheckboxKeyup, true);
+elements.tableWrap.addEventListener("scroll", scheduleResumeContextSave);
+elements.detailPane.addEventListener("scroll", scheduleResumeContextSave);
 elements.recoverUnsavedButton.addEventListener("click", recoverUnsavedChanges);
 elements.discardUnsavedButton.addEventListener("click", discardUnsavedChanges);
 window.addEventListener("mousemove", resizePanels);
@@ -752,7 +757,11 @@ function setRun(run, options = {}) {
   state.selectedCaseIds = new Set();
   state.expandedFolders = collectFolderIds(buildTreeFromCases(state.run.cases, availableStatuses()));
   resetFilterOptions();
-  render({ preserveScroll: true });
+  const resumeContext = options.skipResumeContext ? null : loadResumeContext();
+  if (resumeContext) {
+    applyResumeContext(resumeContext);
+  }
+  render({ preserveScroll: true, restoreScroll: resumeContext?.scroll });
   renderSavedRuns();
 
   if (recoveryAction === "discarded-stale") {
@@ -812,6 +821,29 @@ function resetFilterOptions() {
   fillSelect(elements.assignedToFilter, "Assigned To", uniqueValues("assignedTo"));
 }
 
+function applyResumeContext(context) {
+  state.selectedLocalId = context.selectedLocalId || state.selectedLocalId;
+  state.filters = { ...state.filters, ...context.filters };
+  elements.searchInput.value = state.filters.search;
+  state.filters.currentStatus = setSelectValueIfAvailable(elements.currentStatusFilter, state.filters.currentStatus);
+  state.filters.originalStatus = setSelectValueIfAvailable(elements.originalStatusFilter, state.filters.originalStatus);
+  state.filters.priority = setSelectValueIfAvailable(elements.priorityFilter, state.filters.priority);
+  state.filters.section = setSelectValueIfAvailable(elements.sectionFilter, state.filters.section);
+  state.filters.assignedTo = setSelectValueIfAvailable(elements.assignedToFilter, state.filters.assignedTo);
+  state.expandedFolders = new Set(context.expandedFolders);
+  state.panelWidths = context.panelWidths;
+  state.caseListColumns = context.caseListColumns;
+  applyPanelWidths();
+  applyCaseListColumns();
+}
+
+function setSelectValueIfAvailable(select, value) {
+  const text = String(value || "");
+  const hasOption = [...select.options].some((option) => option.value === text);
+  select.value = hasOption ? text : "";
+  return select.value;
+}
+
 function render(options = {}) {
   const run = state.run;
   const hasRun = Boolean(run);
@@ -862,9 +894,13 @@ function render(options = {}) {
   const renderWithCaseScroll = options.preserveScroll ? withCaseListScrollPreserved : runImmediately;
   const renderWithDetailScroll = options.preserveDetailScroll ? withDetailPaneScrollPreserved : runImmediately;
   renderWithCaseScroll(() => renderWithDetailScroll(doRender));
+  if (options.restoreScroll) {
+    restoreWorkspaceScroll(options.restoreScroll);
+  }
   if (options.scrollIntoView) {
     scheduleCaseListRowScroll(state.selectedLocalId);
   }
+  saveResumeContext();
 }
 
 
@@ -1791,6 +1827,7 @@ function resetLayout() {
   localStorage.removeItem(caseListColumnsStorageKey);
   applyPanelWidths();
   applyCaseListColumns();
+  saveResumeContext();
   showMessage("Layout widths reset.", "success");
 }
 
@@ -1804,6 +1841,7 @@ function loadPanelWidths() {
 
 function savePanelWidths() {
   localStorage.setItem(layoutStorageKey, JSON.stringify(state.panelWidths));
+  saveResumeContext();
 }
 
 function loadCaseListColumns() {
@@ -1816,6 +1854,7 @@ function loadCaseListColumns() {
 
 function saveCaseListColumns() {
   localStorage.setItem(caseListColumnsStorageKey, JSON.stringify(state.caseListColumns));
+  saveResumeContext();
 }
 
 function loadSavedRunsCollapsed() {
@@ -1850,6 +1889,72 @@ function recordExport(type) {
   renderRunSafetyStatus();
 }
 
+function loadResumeContext() {
+  if (!state.run?.id) {
+    return null;
+  }
+  try {
+    const raw = localStorage.getItem(resumeContextStorageKey(state.run.id));
+    if (!raw) {
+      return null;
+    }
+    return normalizeRunResumeContext(JSON.parse(raw), state.run);
+  } catch (error) {
+    console.warn("Could not restore saved workspace position.", error);
+    return null;
+  }
+}
+
+function saveResumeContext() {
+  if (!state.run?.id) {
+    return;
+  }
+  const context = {
+    selectedLocalId: state.selectedLocalId,
+    filters: { ...state.filters },
+    expandedFolders: [...state.expandedFolders],
+    scroll: currentWorkspaceScroll(),
+    panelWidths: state.panelWidths,
+    caseListColumns: state.caseListColumns,
+    updatedAt: new Date().toISOString()
+  };
+  try {
+    localStorage.setItem(resumeContextStorageKey(state.run.id), JSON.stringify(context));
+  } catch (error) {
+    console.warn("Could not save workspace position.", error);
+  }
+}
+
+function scheduleResumeContextSave() {
+  if (!state.run?.id || state.resumeContextSaveFrame) {
+    return;
+  }
+  state.resumeContextSaveFrame = requestAnimationFrame(() => {
+    state.resumeContextSaveFrame = null;
+    saveResumeContext();
+  });
+}
+
+function resumeContextStorageKey(runId) {
+  return `${resumeContextPrefix}${String(runId || "run")}`;
+}
+
+function currentWorkspaceScroll() {
+  return {
+    caseListTop: elements.tableWrap.scrollTop,
+    caseListLeft: elements.tableWrap.scrollLeft,
+    detailTop: elements.detailPane.scrollTop,
+    detailLeft: elements.detailPane.scrollLeft
+  };
+}
+
+function restoreWorkspaceScroll(scroll) {
+  elements.tableWrap.scrollTop = scroll.caseListTop || 0;
+  elements.tableWrap.scrollLeft = scroll.caseListLeft || 0;
+  elements.detailPane.scrollTop = scroll.detailTop || 0;
+  elements.detailPane.scrollLeft = scroll.detailLeft || 0;
+}
+
 function normalizeSavedRunsSort(value) {
   return ["newest", "oldest", "run-name", "run-id"].includes(value) ? value : "newest";
 }
@@ -1871,6 +1976,7 @@ function scheduleCaseListRowScroll(localId) {
       .find((row) => row.dataset.localId === localId);
     if (selectedRow) {
       selectedRow.scrollIntoView({ block: "nearest" });
+      saveResumeContext();
     }
   });
 }
