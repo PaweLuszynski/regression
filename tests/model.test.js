@@ -3,6 +3,7 @@ import { test } from "node:test";
 
 import {
   appendNoteToCases,
+  appendTextToCaseField,
   applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
@@ -472,6 +473,44 @@ test("appendNoteToCases appends notes without overwriting existing local notes",
   assert.equal(result.changed, 2);
   assert.match(cases[0].localNotes, /Existing\n\n\[2026-05-05T10:00:00.000Z\]\nNew note/);
   assert.equal(cases[1].localNotes, "[2026-05-05T10:00:00.000Z]\nNew note");
+});
+
+test("appendTextToCaseField appends timestamped local fields without imported overwrite", () => {
+  const cases = [{
+    localId: "a",
+    importedComment: "Imported comment stays",
+    importedDefects: "BUG-1",
+    localNotes: "Existing note",
+    localDefects: "",
+    localEvidence: "",
+    updatedAt: "old"
+  }];
+
+  assert.deepEqual(
+    appendTextToCaseField(cases, "a", "localNotes", "Observed failure", "2026-05-05T10:00:00.000Z", {
+      prefix: "Failure note"
+    }),
+    { changed: 1 }
+  );
+  assert.deepEqual(
+    appendTextToCaseField(cases, "a", "localEvidence", "Screenshot captured", "2026-05-05T10:05:00.000Z"),
+    { changed: 1 }
+  );
+
+  assert.equal(cases[0].importedComment, "Imported comment stays");
+  assert.equal(cases[0].importedDefects, "BUG-1");
+  assert.match(cases[0].localNotes, /Existing note\n\n\[2026-05-05T10:00:00.000Z\]\nFailure note\nObserved failure/);
+  assert.equal(cases[0].localEvidence, "[2026-05-05T10:05:00.000Z]\nScreenshot captured");
+  assert.equal(cases[0].updatedAt, "2026-05-05T10:05:00.000Z");
+});
+
+test("appendTextToCaseField ignores unsupported fields and blank text", () => {
+  const cases = [{ localId: "a", localNotes: "Existing", updatedAt: "old" }];
+
+  assert.deepEqual(appendTextToCaseField(cases, "a", "importedComment", "Nope", "now"), { changed: 0 });
+  assert.deepEqual(appendTextToCaseField(cases, "a", "localNotes", "  ", "now"), { changed: 0 });
+  assert.equal(cases[0].localNotes, "Existing");
+  assert.equal(cases[0].updatedAt, "old");
 });
 
 test("resolveUnsavedRunRecovery discards stale cache when server data is newer", () => {

@@ -2,6 +2,7 @@ import { classifyProgressImportResponse, classifyXlsxImportResponse, shouldSkipR
 import { buildCsvExport } from "./run-export.js";
 import {
   appendNoteToCases,
+  appendTextToCaseField,
   applyStepStatusToCase,
   applyStatusToCase,
   applyStatusToCases,
@@ -1191,11 +1192,21 @@ function renderDetail(testCase) {
 
   elements.detailPane.append(
     detailBlock("Imported Comment", testCase.importedComment),
-    editorBlock("Local Notes", "localNotes", testCase),
+    localFieldEditorBlock("Local Notes", "localNotes", testCase, {
+      appendLabel: "Append note",
+      placeholder: "Add a timestamped note without replacing imported comments",
+      failureNote: true
+    }),
     detailBlock("Imported Defects", testCase.importedDefects),
-    editorBlock("Local Defects", "localDefects", testCase),
+    localFieldEditorBlock("Local Defects", "localDefects", testCase, {
+      appendLabel: "Append defect",
+      placeholder: "Add a bug ID, link, or defect note"
+    }),
     detailBlock("References", testCase.references),
-    editorBlock("Local Evidence", "localEvidence", testCase),
+    localFieldEditorBlock("Local Evidence", "localEvidence", testCase, {
+      appendLabel: "Append evidence",
+      placeholder: "Add a local evidence note or reference"
+    }),
     detailBlock("Preconditions", testCase.preconditions),
     stepsTable(testCase)
   );
@@ -1393,17 +1404,60 @@ function navigateToVisibleCase(localId) {
   render({ preserveScroll: true, scrollIntoView: true });
 }
 
-function editorBlock(title, field, testCase) {
-  const wrapper = document.createElement("label");
-  wrapper.className = "editor-block";
-  wrapper.append(textElement("span", title));
+function localFieldEditorBlock(title, field, testCase, options = {}) {
+  const wrapper = document.createElement("section");
+  wrapper.className = "editor-block local-field-block";
+  wrapper.append(textElement("h3", title));
+
+  const editorLabel = document.createElement("label");
+  editorLabel.className = "local-field-current";
+  editorLabel.append(textElement("span", "Current local value"));
   const textarea = document.createElement("textarea");
   textarea.value = testCase[field] || "";
   textarea.rows = 4;
+  textarea.setAttribute("aria-label", title);
   textarea.addEventListener("change", () => {
     updateCase(testCase.localId, { [field]: textarea.value });
   });
-  wrapper.append(textarea);
+  editorLabel.append(textarea);
+  wrapper.append(editorLabel);
+
+  const appendControls = document.createElement("div");
+  appendControls.className = "quick-append-controls";
+  const appendTextarea = document.createElement("textarea");
+  appendTextarea.rows = 2;
+  appendTextarea.placeholder = options.placeholder || "Append a timestamped entry";
+  appendTextarea.setAttribute("aria-label", `${options.appendLabel || "Append"} text`);
+  const appendButton = document.createElement("button");
+  appendButton.type = "button";
+  appendButton.textContent = options.appendLabel || "Append";
+  appendButton.addEventListener("click", () => {
+    appendCaseField(testCase.localId, field, appendTextarea.value, {
+      clearControl: appendTextarea
+    });
+  });
+  appendControls.append(appendTextarea, appendButton);
+  wrapper.append(appendControls);
+
+  if (options.failureNote) {
+    const failureControls = document.createElement("div");
+    failureControls.className = "quick-append-controls failure-note-controls";
+    const failureTextarea = document.createElement("textarea");
+    failureTextarea.rows = 2;
+    failureTextarea.placeholder = "Describe the failure observed during execution";
+    failureTextarea.setAttribute("aria-label", "Failure note");
+    const failureButton = document.createElement("button");
+    failureButton.type = "button";
+    failureButton.textContent = "Append failure note";
+    failureButton.addEventListener("click", () => {
+      appendCaseField(testCase.localId, field, failureTextarea.value, {
+        clearControl: failureTextarea,
+        prefix: "Failure note"
+      });
+    });
+    failureControls.append(failureTextarea, failureButton);
+    wrapper.append(failureControls);
+  }
   return wrapper;
 }
 
@@ -1456,6 +1510,27 @@ async function updateCase(localId, patch) {
   try {
     await saveProgress();
     showMessage("Progress saved locally.", "success");
+    await loadSavedRuns();
+  } catch (error) {
+    showMessage(error.message, "error");
+  }
+}
+
+async function appendCaseField(localId, field, text, options = {}) {
+  const result = appendTextToCaseField(state.run.cases, localId, field, text, new Date().toISOString(), {
+    prefix: options.prefix
+  });
+  if (result.changed === 0) {
+    showMessage("Nothing to append.", "warning");
+    return;
+  }
+  if (options.clearControl) {
+    options.clearControl.value = "";
+  }
+  render({ preserveScroll: true, preserveDetailScroll: true });
+  try {
+    await saveProgress();
+    showMessage("Timestamped local entry appended.", "success");
     await loadSavedRuns();
   } catch (error) {
     showMessage(error.message, "error");

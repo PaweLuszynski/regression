@@ -1062,6 +1062,40 @@ body.resizing-columns .case-column-resizer::after {
   margin-bottom: 10px;
 }
 
+.local-field-block {
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.local-field-block h3 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.local-field-current {
+  display: grid;
+  gap: 6px;
+}
+
+.quick-append-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.quick-append-controls button {
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.failure-note-controls {
+  background: color-mix(in srgb, var(--warning-bg) 58%, white);
+  border: 1px solid color-mix(in srgb, var(--warning-border) 50%, var(--border));
+  border-radius: 8px;
+  padding: 8px;
+}
+
 .result-actions {
   display: flex;
   flex-wrap: wrap;

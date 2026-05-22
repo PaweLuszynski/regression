@@ -458,6 +458,23 @@ export function appendNoteToCases(cases, localIds, note, updatedAt = new Date().
   return { changed };
 }
 
+export function appendTextToCaseField(cases, localId, field, text, updatedAt = new Date().toISOString(), options = {}) {
+  if (!["localNotes", "localDefects", "localEvidence"].includes(field)) {
+    return { changed: 0 };
+  }
+  const testCase = (Array.isArray(cases) ? cases : []).find((item) => item.localId === localId);
+  const trimmedText = String(text || "").trim();
+  if (!testCase || !trimmedText) {
+    return { changed: 0 };
+  }
+  const prefix = String(options.prefix || "").trim();
+  const body = prefix ? `${prefix}\n${trimmedText}` : trimmedText;
+  const noteBlock = `[${updatedAt}]\n${body}`;
+  testCase[field] = testCase[field] ? `${testCase[field]}\n\n${noteBlock}` : noteBlock;
+  testCase.updatedAt = updatedAt;
+  return { changed: 1 };
+}
+
 export function buildTreeFromCases(cases, availableStatuses = collectCaseStatuses(cases)) {
   const root = createFolderNode("root", "All Tests");
   const folderMap = new Map([["root", root]]);
