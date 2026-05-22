@@ -35,6 +35,11 @@ export const caseListColumnMinimums = {
 
 export const keyboardResizeStep = 24;
 export const keyboardResizeStepLarge = 72;
+export const defaultFailureCommentTemplates = [
+  "Actual result differs",
+  "Blocked by environment",
+  "Needs retest"
+];
 
 const statusColors = {
   Passed: { className: "status-passed", color: "#16803c", label: "Passed" },
@@ -211,6 +216,21 @@ export function getRunSafetyTimestamps(run, exportHistory = {}) {
     exportedAt: typeof exportRecord === "string" ? exportRecord : stringValue(exportRecord?.exportedAt),
     exportType: typeof exportRecord === "object" && exportRecord ? stringValue(exportRecord.type) : ""
   };
+}
+
+export function normalizeFailureCommentTemplates(values, fallbackTemplates = defaultFailureCommentTemplates) {
+  const normalized = [];
+  const seen = new Set();
+  for (const value of Array.isArray(values) ? values : []) {
+    const text = stringValue(value).trim();
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    normalized.push(text);
+  }
+  return normalized.length > 0 ? normalized : [...fallbackTemplates];
 }
 
 export function sortSavedRuns(runs, sortKey = "newest") {

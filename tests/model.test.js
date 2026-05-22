@@ -13,6 +13,7 @@ import {
   getKeyboardResizeDelta,
   getNextSavedRunIdAfterDeletion,
   getRunSafetyTimestamps,
+  normalizeFailureCommentTemplates,
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
@@ -511,6 +512,24 @@ test("appendTextToCaseField ignores unsupported fields and blank text", () => {
   assert.deepEqual(appendTextToCaseField(cases, "a", "localNotes", "  ", "now"), { changed: 0 });
   assert.equal(cases[0].localNotes, "Existing");
   assert.equal(cases[0].updatedAt, "old");
+});
+
+test("normalizeFailureCommentTemplates trims dedupes and falls back to defaults", () => {
+  assert.deepEqual(normalizeFailureCommentTemplates([
+    " Actual result differs ",
+    "",
+    "actual result differs",
+    "Needs retest"
+  ]), [
+    "Actual result differs",
+    "Needs retest"
+  ]);
+
+  assert.deepEqual(normalizeFailureCommentTemplates([]), [
+    "Actual result differs",
+    "Blocked by environment",
+    "Needs retest"
+  ]);
 });
 
 test("resolveUnsavedRunRecovery discards stale cache when server data is newer", () => {

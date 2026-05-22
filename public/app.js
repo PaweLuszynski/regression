@@ -14,6 +14,8 @@ import {
   getNextSavedRunIdAfterDeletion,
   getKeyboardResizeDelta,
   getRunSafetyTimestamps,
+  defaultFailureCommentTemplates,
+  normalizeFailureCommentTemplates,
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
@@ -40,6 +42,7 @@ const caseListColumnsStorageKey = "testrailLocalViewer.caseListColumns.v1";
 const savedRunsCollapsedStorageKey = "testrailLocalViewer.savedRunsCollapsed.v1";
 const savedRunsSortStorageKey = "testrailLocalViewer.savedRunsSort.v1";
 const exportHistoryStorageKey = "testrailLocalViewer.exportHistory.v1";
+const failureTemplatesStorageKey = "testrailLocalViewer.failureCommentTemplates.v1";
 const unsavedRunPrefix = "testrailLocalViewer.unsavedRun.v1.";
 const defaultRunMetaText = "Import a TestRail XLSX run export to continue locally.";
 const importAcceptByType = {
@@ -63,6 +66,7 @@ const state = {
   savedRunsCollapsed: loadSavedRunsCollapsed(),
   savedRunsSort: loadSavedRunsSort(),
   exportHistory: loadExportHistory(),
+  failureTemplates: loadFailureTemplates(),
   filters: {
     search: "",
     currentStatus: "",
@@ -1195,7 +1199,8 @@ function renderDetail(testCase) {
     localFieldEditorBlock("Local Notes", "localNotes", testCase, {
       appendLabel: "Append note",
       placeholder: "Add a timestamped note without replacing imported comments",
-      failureNote: true
+      failureNote: true,
+      templates: true
     }),
     detailBlock("Imported Defects", testCase.importedDefects),
     localFieldEditorBlock("Local Defects", "localDefects", testCase, {
@@ -1458,7 +1463,62 @@ function localFieldEditorBlock(title, field, testCase, options = {}) {
     failureControls.append(failureTextarea, failureButton);
     wrapper.append(failureControls);
   }
+  if (options.templates) {
+    wrapper.append(failureTemplateControls(testCase.localId));
+  }
   return wrapper;
+}
+
+function failureTemplateControls(localId) {
+  const section = document.createElement("section");
+  section.className = "failure-template-controls";
+  section.append(textElement("h4", "Quick failure templates"));
+
+  const buttons = document.createElement("div");
+  buttons.className = "failure-template-buttons";
+  for (const template of state.failureTemplates) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = template;
+    button.addEventListener("click", () => {
+      appendCaseField(localId, "localNotes", template);
+    });
+    buttons.append(button);
+  }
+  section.append(buttons);
+
+  const editor = document.createElement("details");
+  editor.className = "failure-template-editor";
+  const summary = document.createElement("summary");
+  summary.textContent = "Edit templates";
+  const textarea = document.createElement("textarea");
+  textarea.rows = 4;
+  textarea.value = state.failureTemplates.join("\n");
+  textarea.setAttribute("aria-label", "Failure templates, one per line");
+  const actions = document.createElement("div");
+  actions.className = "failure-template-actions";
+  const saveButton = document.createElement("button");
+  saveButton.type = "button";
+  saveButton.textContent = "Save templates";
+  saveButton.addEventListener("click", () => {
+    state.failureTemplates = normalizeFailureCommentTemplates(textarea.value.split("\n"));
+    saveFailureTemplates();
+    render({ preserveScroll: true, preserveDetailScroll: true });
+    showMessage("Quick failure templates saved.", "success");
+  });
+  const resetButton = document.createElement("button");
+  resetButton.type = "button";
+  resetButton.textContent = "Reset templates";
+  resetButton.addEventListener("click", () => {
+    state.failureTemplates = [...defaultFailureCommentTemplates];
+    saveFailureTemplates();
+    render({ preserveScroll: true, preserveDetailScroll: true });
+    showMessage("Quick failure templates reset.", "success");
+  });
+  actions.append(saveButton, resetButton);
+  editor.append(summary, textarea, actions);
+  section.append(editor);
+  return section;
 }
 
 function detailBlock(title, value) {
@@ -1908,6 +1968,18 @@ function loadExportHistory() {
   } catch {
     return {};
   }
+}
+
+function loadFailureTemplates() {
+  try {
+    return normalizeFailureCommentTemplates(JSON.parse(localStorage.getItem(failureTemplatesStorageKey) || "[]"));
+  } catch {
+    return [...defaultFailureCommentTemplates];
+  }
+}
+
+function saveFailureTemplates() {
+  localStorage.setItem(failureTemplatesStorageKey, JSON.stringify(state.failureTemplates));
 }
 
 function recordExport(type) {
