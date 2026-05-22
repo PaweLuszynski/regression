@@ -368,6 +368,25 @@ export function applyStepStatusToCase(cases, localId, stepIndex, status, updated
   return { changed: 1 };
 }
 
+export function getStepNavigationState(currentIndex, stepCount) {
+  const count = Math.max(0, Number(stepCount) || 0);
+  if (count === 0) {
+    return {
+      currentIndex: 0,
+      label: "No steps",
+      hasPrevious: false,
+      hasNext: false
+    };
+  }
+  const index = Math.max(0, Math.min(Number(currentIndex) || 0, count - 1));
+  return {
+    currentIndex: index,
+    label: `Step ${index + 1} of ${count}`,
+    hasPrevious: index > 0,
+    hasNext: index < count - 1
+  };
+}
+
 export function getNextCaseId(currentCaseId, visibleCaseIds) {
   if (visibleCaseIds.length === 0) {
     return null;

@@ -1184,6 +1184,33 @@ pre {
   border-radius: 6px;
 }
 
+.step-execution-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 10px;
+}
+
+.step-execution-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.step-nav-button {
+  padding: 6px 10px;
+}
+
+.step-nav-button:disabled {
+  background: color-mix(in srgb, var(--panel) 72%, #eef2f6);
+  border-color: var(--border);
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
 .steps-table {
   width: 100%;
   min-width: 920px;
@@ -1216,6 +1243,11 @@ pre {
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
+}
+
+.steps-table tr.is-current-step td {
+  background: color-mix(in srgb, var(--warning-bg) 70%, white);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 
 .step-status-editor {

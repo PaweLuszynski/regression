@@ -13,6 +13,7 @@ import {
   getNextSavedRunIdAfterDeletion,
   getKeyboardResizeDelta,
   getRunSafetyTimestamps,
+  getStepNavigationState,
   getStatusColor,
   getEffectiveStepStatus,
   getVisibleCaseOrder,
@@ -62,6 +63,7 @@ const state = {
   savedRunsCollapsed: loadSavedRunsCollapsed(),
   savedRunsSort: loadSavedRunsSort(),
   exportHistory: loadExportHistory(),
+  activeStepIndexByCase: new Map(),
   filters: {
     search: "",
     currentStatus: "",
@@ -750,6 +752,7 @@ function setRun(run, options = {}) {
   state.run = normalizeRun(nextRun);
   state.selectedLocalId = state.run.cases[0]?.localId || null;
   state.selectedCaseIds = new Set();
+  state.activeStepIndexByCase = new Map();
   state.expandedFolders = collectFolderIds(buildTreeFromCases(state.run.cases, availableStatuses()));
   resetFilterOptions();
   render({ preserveScroll: true });
@@ -782,6 +785,7 @@ function clearActiveRun() {
   state.run = null;
   state.selectedLocalId = null;
   state.selectedCaseIds = new Set();
+  state.activeStepIndexByCase = new Map();
   state.expandedFolders = new Set();
   state.pendingRecoveredRun = null;
   resetFilterOptions();
@@ -1241,6 +1245,9 @@ function stepsTable(testCase) {
     return wrapper;
   }
 
+  const activeStep = activeStepNavigation(testCase.localId, rows.length);
+  wrapper.append(stepExecutionControls(testCase.localId, activeStep));
+
   const hasStepStatus = rows.length > 0;
   const hasExtras = rows.some((row) => row.additionalInfo || row.references);
   const scroll = document.createElement("div");
@@ -1271,6 +1278,10 @@ function stepsTable(testCase) {
   const body = document.createElement("tbody");
   for (const [index, row] of rows.entries()) {
     const tr = document.createElement("tr");
+    if (index === activeStep.currentIndex) {
+      tr.classList.add("is-current-step");
+      tr.setAttribute("aria-current", "step");
+    }
     tr.append(multilineCell(row.step), multilineCell(row.expectedResult));
     if (hasStepStatus) {
       const statusCell = document.createElement("td");
@@ -1299,6 +1310,43 @@ function stepsTable(testCase) {
   scroll.append(table);
   wrapper.append(scroll);
   return wrapper;
+}
+
+function activeStepNavigation(localId, stepCount) {
+  const requestedIndex = state.activeStepIndexByCase.get(localId) ?? 0;
+  const navigation = getStepNavigationState(requestedIndex, stepCount);
+  state.activeStepIndexByCase.set(localId, navigation.currentIndex);
+  return navigation;
+}
+
+function stepExecutionControls(localId, navigation) {
+  const controls = document.createElement("div");
+  controls.className = "step-execution-controls";
+  controls.setAttribute("aria-label", "Step-by-step execution");
+
+  const label = textElement("span", navigation.label, "step-execution-label");
+  const previous = document.createElement("button");
+  previous.type = "button";
+  previous.className = "step-nav-button";
+  previous.textContent = "Previous step";
+  previous.disabled = !navigation.hasPrevious;
+  previous.addEventListener("click", () => navigateStep(localId, -1));
+
+  const next = document.createElement("button");
+  next.type = "button";
+  next.className = "step-nav-button";
+  next.textContent = "Next step";
+  next.disabled = !navigation.hasNext;
+  next.addEventListener("click", () => navigateStep(localId, 1));
+
+  controls.append(label, previous, next);
+  return controls;
+}
+
+function navigateStep(localId, direction) {
+  const currentIndex = state.activeStepIndexByCase.get(localId) ?? 0;
+  state.activeStepIndexByCase.set(localId, currentIndex + direction);
+  render({ preserveScroll: true, preserveDetailScroll: true });
 }
 
 function createStatusSelect(testCase) {

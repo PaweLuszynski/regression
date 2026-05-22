@@ -12,6 +12,7 @@ import {
   getKeyboardResizeDelta,
   getNextSavedRunIdAfterDeletion,
   getRunSafetyTimestamps,
+  getStepNavigationState,
   latestRunTimestamp,
   getVisibleCaseOrder,
   getNextCaseId,
@@ -368,6 +369,27 @@ test("applyStepStatusToCase updates current step status without overwriting impo
   assert.equal(cases[0].steps[0].currentStatus, "Passed");
   assert.equal(cases[0].steps[0].localCurrentStatus, "Passed");
   assert.equal(cases[0].updatedAt, "now");
+});
+
+test("getStepNavigationState clamps current step and exposes controls", () => {
+  assert.deepEqual(getStepNavigationState(1, 3), {
+    currentIndex: 1,
+    label: "Step 2 of 3",
+    hasPrevious: true,
+    hasNext: true
+  });
+  assert.deepEqual(getStepNavigationState(99, 3), {
+    currentIndex: 2,
+    label: "Step 3 of 3",
+    hasPrevious: true,
+    hasNext: false
+  });
+  assert.deepEqual(getStepNavigationState(0, 0), {
+    currentIndex: 0,
+    label: "No steps",
+    hasPrevious: false,
+    hasNext: false
+  });
 });
 
 test("getNextCaseId returns the next visible id or null for the last case", () => {
