@@ -612,6 +612,44 @@ test("normalizeRun materializes available statuses and editable step state", () 
   assert.equal(run.cases[0].steps[0].currentStatus, "Needs Review");
 });
 
+test("normalizeRun keeps duplicate visible test ids selectable by unique local ids", () => {
+  const run = normalizeRun({
+    id: "run",
+    cases: [
+      {
+        localId: "T4328",
+        testId: "T4328",
+        caseId: "C286",
+        title: "One-time token expires after order creation",
+        originalStatus: "Untested",
+        currentStatus: "Untested",
+        rawRow: { ID: "T4328", "Case ID": "C286" }
+      },
+      {
+        localId: "T4328",
+        testId: "T4328",
+        caseId: "C295",
+        title: "Aggregation and Display of Open To-Do Tasks",
+        originalStatus: "Untested",
+        currentStatus: "Untested",
+        rawRow: { ID: "T4328", "Case ID": "C295" }
+      }
+    ]
+  });
+
+  assert.equal(run.cases[0].testId, "T4328");
+  assert.equal(run.cases[1].testId, "T4328");
+  assert.equal(run.cases[0].caseId, "C286");
+  assert.equal(run.cases[1].caseId, "C295");
+  assert.notEqual(run.cases[0].localId, run.cases[1].localId);
+  assert.deepEqual(getVisibleCaseOrder(groupCasesBySection(run.cases)), [
+    run.cases[0].localId,
+    run.cases[1].localId
+  ]);
+  assert.equal(buildTreeFromCases(run.cases).children[0].children[0].id, `test-${run.cases[0].localId}`);
+  assert.equal(buildTreeFromCases(run.cases).children[0].children[1].id, `test-${run.cases[1].localId}`);
+});
+
 test("normalizeRun preserves blank local step status when no imported step status exists", () => {
   const run = normalizeRun({
     id: "run",

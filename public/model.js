@@ -158,7 +158,7 @@ export function normalizeRun(run) {
     ...initialStatuses,
     ...collectCaseStatuses(initialCases)
   ]);
-  const cases = initialCases.map((testCase) => normalizeRunCase(testCase, availableStatuses));
+  const cases = ensureUniqueCaseLocalIds(initialCases.map((testCase) => normalizeRunCase(testCase, availableStatuses)));
   return {
     ...run,
     availableStatuses,
@@ -762,6 +762,30 @@ function normalizeRunCase(testCase, availableStatuses) {
     currentStatus,
     steps: normalizeStepRows(parsedSteps, availableStatuses)
   };
+}
+
+function ensureUniqueCaseLocalIds(cases) {
+  const counts = new Map();
+  const used = new Set();
+
+  return cases.map((testCase, index) => {
+    const baseId = stringValue(testCase?.localId || testCase?.testId || testCase?.caseId || `row-${index + 1}`) || `row-${index + 1}`;
+    const seenCount = (counts.get(baseId) || 0) + 1;
+    counts.set(baseId, seenCount);
+
+    let localId = seenCount === 1 ? baseId : `${baseId}__${seenCount}`;
+    while (used.has(localId)) {
+      const nextCount = (counts.get(baseId) || seenCount) + 1;
+      counts.set(baseId, nextCount);
+      localId = `${baseId}__${nextCount}`;
+    }
+    used.add(localId);
+
+    return {
+      ...testCase,
+      localId
+    };
+  });
 }
 
 function clampPanelWidth(value, panel) {
