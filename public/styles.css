@@ -1213,12 +1213,12 @@ pre {
 
 .steps-table {
   width: 100%;
-  min-width: 920px;
+  min-width: 840px;
   table-layout: fixed;
 }
 
 .steps-col-step {
-  width: 36%;
+  width: 28%;
 }
 
 .steps-col-expected {
@@ -1226,11 +1226,11 @@ pre {
 }
 
 .steps-col-status {
-  width: 200px;
+  width: 160px;
 }
 
 .steps-col-more {
-  width: 90px;
+  width: 64px;
 }
 
 .steps-table th {
@@ -1261,13 +1261,13 @@ pre {
 
 .step-status-editor select {
   width: 100%;
-  min-width: 170px;
+  min-width: 140px;
   min-height: 38px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel);
   color: var(--text);
-  padding: 8px 34px 8px 12px;
+  padding: 7px 28px 7px 10px;
   line-height: 1.35;
   font-size: 14px;
   box-sizing: border-box;

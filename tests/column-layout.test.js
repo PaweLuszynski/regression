@@ -36,6 +36,16 @@ test("case list column resizers remain keyboard focusable and visible", () => {
   );
 });
 
+test("step table keeps utility columns compact while preserving readable text wrapping", () => {
+  assert.match(cssRule(".steps-table"), /table-layout:\s*fixed/);
+  assert.match(cssRule(".steps-col-step"), /width:\s*28%/);
+  assert.match(cssRule(".steps-col-status"), /width:\s*160px/);
+  assert.match(cssRule(".steps-col-more"), /width:\s*64px/);
+  assert.match(cssRule(".steps-table td"), /word-break:\s*normal/);
+  assert.match(cssRule(".steps-table td"), /overflow-wrap:\s*break-word/);
+  assert.match(cssRule(".step-status-editor select"), /min-width:\s*140px/);
+});
+
 function cssRule(selector) {
   const escapedSelector = escapeRegExp(selector);
   const match = styles.match(new RegExp(`${escapedSelector}\\s*\\{([\\s\\S]*?)\\n\\}`, "m"));
