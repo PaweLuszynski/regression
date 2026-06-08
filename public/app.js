@@ -1252,7 +1252,6 @@ function stepsTable(testCase) {
   wrapper.append(stepExecutionControls(testCase.localId, activeStep));
 
   const hasStepStatus = rows.length > 0;
-  const hasExtras = rows.some((row) => row.additionalInfo || row.references);
   const scroll = document.createElement("div");
   scroll.className = "steps-scroll";
   const table = document.createElement("table");
@@ -1262,18 +1261,12 @@ function stepsTable(testCase) {
   if (hasStepStatus) {
     columnGroup.append(colElement("steps-col-status"));
   }
-  if (hasExtras) {
-    columnGroup.append(colElement("steps-col-more"));
-  }
   table.append(columnGroup);
   const head = document.createElement("thead");
   const headerRow = document.createElement("tr");
   headerRow.append(textElement("th", "Step"), textElement("th", "Expected Result"));
   if (hasStepStatus) {
     headerRow.append(textElement("th", "Step Status"));
-  }
-  if (hasExtras) {
-    headerRow.append(textElement("th", "More"));
   }
   head.append(headerRow);
   table.append(head);
@@ -1287,27 +1280,11 @@ function stepsTable(testCase) {
       tr.setAttribute("aria-current", "step");
       tr.dataset.currentStep = "true";
     }
-    tr.append(multilineCell(row.step), multilineCell(row.expectedResult));
+    tr.append(stepDescriptionCell(row), multilineCell(row.expectedResult));
     if (hasStepStatus) {
       const statusCell = document.createElement("td");
       statusCell.append(createStepStatusEditor(testCase, index, row));
       tr.append(statusCell);
-    }
-    if (hasExtras) {
-      const extraCell = document.createElement("td");
-      if (row.additionalInfo || row.references) {
-        const details = document.createElement("details");
-        const summary = document.createElement("summary");
-        summary.textContent = "Details";
-        const pre = document.createElement("pre");
-        pre.textContent = [
-          row.additionalInfo ? `Additional Info:\n${row.additionalInfo}` : "",
-          row.references ? `References:\n${row.references}` : ""
-        ].filter(Boolean).join("\n\n");
-        details.append(summary, pre);
-        extraCell.append(details);
-      }
-      tr.append(extraCell);
     }
     body.append(tr);
   }
@@ -1496,6 +1473,29 @@ function multilineCell(value) {
   const pre = document.createElement("pre");
   pre.textContent = value || "";
   cell.append(pre);
+  return cell;
+}
+
+function stepDescriptionCell(row) {
+  const cell = multilineCell(row.step);
+  const extras = [
+    ["Additional Info", row.additionalInfo],
+    ["References", row.references]
+  ].filter(([, value]) => value);
+  if (extras.length === 0) {
+    return cell;
+  }
+
+  const extraList = document.createElement("div");
+  extraList.className = "step-extra-inline";
+  for (const [label, value] of extras) {
+    const item = document.createElement("p");
+    const strong = document.createElement("strong");
+    strong.textContent = `${label}: `;
+    item.append(strong, document.createTextNode(value));
+    extraList.append(item);
+  }
+  cell.append(extraList);
   return cell;
 }
 

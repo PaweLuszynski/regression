@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const styles = await readFile(new URL("../public/styles.css", import.meta.url), "utf8");
+const appSource = await readFile(new URL("../public/app.js", import.meta.url), "utf8");
 
 test("case list header and rows use the same persisted column variables", () => {
   const headerRule = cssRule(".case-list-header");
@@ -38,12 +39,19 @@ test("case list column resizers remain keyboard focusable and visible", () => {
 
 test("step table keeps utility columns compact while preserving readable text wrapping", () => {
   assert.match(cssRule(".steps-table"), /table-layout:\s*fixed/);
-  assert.match(cssRule(".steps-col-step"), /width:\s*28%/);
-  assert.match(cssRule(".steps-col-status"), /width:\s*160px/);
-  assert.match(cssRule(".steps-col-more"), /width:\s*64px/);
+  assert.match(cssRule(".steps-table"), /min-width:\s*680px/);
+  assert.match(cssRule(".steps-col-step"), /width:\s*34%/);
+  assert.match(cssRule(".steps-col-status"), /width:\s*150px/);
   assert.match(cssRule(".steps-table td"), /word-break:\s*normal/);
   assert.match(cssRule(".steps-table td"), /overflow-wrap:\s*break-word/);
   assert.match(cssRule(".step-status-editor select"), /min-width:\s*140px/);
+});
+
+test("step table renders extra step metadata inline instead of a dedicated More column", () => {
+  assert.doesNotMatch(appSource, /steps-col-more/);
+  assert.doesNotMatch(appSource, /textElement\("th", "More"\)/);
+  assert.doesNotMatch(styles, /\.steps-col-more\b/);
+  assert.match(appSource, /step-extra-inline/);
 });
 
 function cssRule(selector) {

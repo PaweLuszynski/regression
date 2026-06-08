@@ -1213,12 +1213,12 @@ pre {
 
 .steps-table {
   width: 100%;
-  min-width: 840px;
+  min-width: 680px;
   table-layout: fixed;
 }
 
 .steps-col-step {
-  width: 28%;
+  width: 34%;
 }
 
 .steps-col-expected {
@@ -1226,11 +1226,7 @@ pre {
 }
 
 .steps-col-status {
-  width: 160px;
-}
-
-.steps-col-more {
-  width: 64px;
+  width: 150px;
 }
 
 .steps-table th {
@@ -1246,7 +1242,7 @@ pre {
 }
 
 .steps-table tr.is-current-step td {
-  background: color-mix(in srgb, var(--warning-bg) 70%, white);
+  background: color-mix(in srgb, var(--accent) 8%, var(--panel));
   box-shadow: inset 3px 0 0 var(--accent);
 }
 
@@ -1284,13 +1280,26 @@ pre {
   white-space: nowrap;
 }
 
-.steps-table summary {
-  white-space: nowrap;
-  cursor: pointer;
+.step-extra-inline {
+  display: grid;
+  gap: 4px;
+  margin-top: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
 }
 
-.steps-table details pre {
-  margin-top: 8px;
+.step-extra-inline p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: normal;
+  overflow-wrap: break-word;
+}
+
+.step-extra-inline strong {
+  color: var(--text);
 }
 
 @media (max-width: 1100px) {
