@@ -1283,6 +1283,7 @@ function stepsTable(testCase) {
     tr.append(stepDescriptionCell(row), multilineCell(row.expectedResult));
     if (hasStepStatus) {
       const statusCell = document.createElement("td");
+      statusCell.className = "step-status-cell";
       statusCell.append(createStepStatusEditor(testCase, index, row));
       tr.append(statusCell);
     }
@@ -1481,7 +1482,7 @@ function stepDescriptionCell(row) {
   const extras = [
     ["Additional Info", row.additionalInfo],
     ["References", row.references]
-  ].filter(([, value]) => value);
+  ].filter(([, value]) => isMeaningfulStepExtra(value));
   if (extras.length === 0) {
     return cell;
   }
@@ -1497,6 +1498,17 @@ function stepDescriptionCell(row) {
   }
   cell.append(extraList);
   return cell;
+}
+
+function isMeaningfulStepExtra(value) {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  const text = String(value).trim();
+  if (!text) {
+    return false;
+  }
+  return text.replace(/[\s\d.,;:()[\]{}_-]+/g, "").length > 0;
 }
 
 async function updateCase(localId, patch) {

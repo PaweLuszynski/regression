@@ -1226,7 +1226,7 @@ pre {
 }
 
 .steps-col-status {
-  width: 150px;
+  width: 170px;
 }
 
 .steps-table th {
@@ -1239,6 +1239,10 @@ pre {
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
+}
+
+.steps-table td.step-status-cell {
+  padding-right: 16px;
 }
 
 .steps-table tr.is-current-step td {

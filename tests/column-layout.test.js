@@ -41,7 +41,8 @@ test("step table keeps utility columns compact while preserving readable text wr
   assert.match(cssRule(".steps-table"), /table-layout:\s*fixed/);
   assert.match(cssRule(".steps-table"), /min-width:\s*680px/);
   assert.match(cssRule(".steps-col-step"), /width:\s*34%/);
-  assert.match(cssRule(".steps-col-status"), /width:\s*150px/);
+  assert.match(cssRule(".steps-col-status"), /width:\s*170px/);
+  assert.match(cssRule(".steps-table td.step-status-cell"), /padding-right:\s*16px/);
   assert.match(cssRule(".steps-table td"), /word-break:\s*normal/);
   assert.match(cssRule(".steps-table td"), /overflow-wrap:\s*break-word/);
   assert.match(cssRule(".step-status-editor select"), /min-width:\s*140px/);
@@ -52,6 +53,15 @@ test("step table renders extra step metadata inline instead of a dedicated More 
   assert.doesNotMatch(appSource, /textElement\("th", "More"\)/);
   assert.doesNotMatch(styles, /\.steps-col-more\b/);
   assert.match(appSource, /step-extra-inline/);
+});
+
+test("step table hides placeholder step extras while preserving meaningful metadata", () => {
+  assert.match(appSource, /function isMeaningfulStepExtra/);
+  assert.ok(
+    appSource.includes('replace(/[\\s\\d.,;:()[\\]{}_-]+/g, "")'),
+    "Expected step extra filtering to remove numeric and punctuation placeholders"
+  );
+  assert.match(appSource, /\.filter\(\(\[, value\]\) => isMeaningfulStepExtra\(value\)\)/);
 });
 
 function cssRule(selector) {
