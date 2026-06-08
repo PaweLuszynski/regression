@@ -1188,8 +1188,8 @@ pre {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8px;
-  margin: 8px 0 10px;
+  gap: 6px;
+  margin: 4px 0 6px;
 }
 
 .step-execution-label {
@@ -1200,7 +1200,7 @@ pre {
 }
 
 .step-nav-button {
-  padding: 6px 10px;
+  padding: 5px 9px;
 }
 
 .step-nav-button:disabled {
@@ -1239,7 +1239,7 @@ pre {
 
 .steps-table td {
   max-width: none;
-  padding: 12px;
+  padding: 8px 10px;
   white-space: normal;
   word-break: normal;
   overflow-wrap: break-word;
@@ -1248,6 +1248,10 @@ pre {
 .steps-table tr.is-current-step td {
   background: color-mix(in srgb, var(--warning-bg) 70%, white);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.steps-table tr.is-current-step {
+  scroll-margin-block: 72px;
 }
 
 .step-status-editor {

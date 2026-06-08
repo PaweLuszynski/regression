@@ -869,6 +869,9 @@ function render(options = {}) {
   if (options.scrollIntoView) {
     scheduleCaseListRowScroll(state.selectedLocalId);
   }
+  if (options.scrollActiveStep) {
+    scheduleActiveStepScroll();
+  }
 }
 
 
@@ -1278,9 +1281,11 @@ function stepsTable(testCase) {
   const body = document.createElement("tbody");
   for (const [index, row] of rows.entries()) {
     const tr = document.createElement("tr");
+    tr.dataset.stepIndex = String(index);
     if (index === activeStep.currentIndex) {
       tr.classList.add("is-current-step");
       tr.setAttribute("aria-current", "step");
+      tr.dataset.currentStep = "true";
     }
     tr.append(multilineCell(row.step), multilineCell(row.expectedResult));
     if (hasStepStatus) {
@@ -1346,7 +1351,7 @@ function stepExecutionControls(localId, navigation) {
 function navigateStep(localId, direction) {
   const currentIndex = state.activeStepIndexByCase.get(localId) ?? 0;
   state.activeStepIndexByCase.set(localId, currentIndex + direction);
-  render({ preserveScroll: true, preserveDetailScroll: true });
+  render({ preserveScroll: true, preserveDetailScroll: true, scrollActiveStep: true });
 }
 
 function createStatusSelect(testCase) {
@@ -1919,6 +1924,15 @@ function scheduleCaseListRowScroll(localId) {
       .find((row) => row.dataset.localId === localId);
     if (selectedRow) {
       selectedRow.scrollIntoView({ block: "nearest" });
+    }
+  });
+}
+
+function scheduleActiveStepScroll() {
+  requestAnimationFrame(() => {
+    const activeStep = elements.detailPane.querySelector('[data-current-step="true"]');
+    if (activeStep) {
+      activeStep.scrollIntoView({ block: "nearest", inline: "nearest" });
     }
   });
 }
